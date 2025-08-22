@@ -85,6 +85,9 @@ export function DeployDialogV2({
   const { 
     currentAccount, 
     network, 
+    walletType,
+    isPlaygroundConnected,
+    isExternalConnected,
     isPlaygroundWallet, 
     playgroundAddress,
     switchNetwork,
@@ -100,7 +103,12 @@ export function DeployDialogV2({
   const [activeTab, setActiveTab] = useState<'deploy' | 'simulate' | 'bytecode'>('deploy');
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationResult, setSimulationResult] = useState<any>(null);
-  const [selectedWalletType, setSelectedWalletType] = useState<'playground' | 'external'>('playground');
+  // Initialize selected wallet type based on current wallet connection
+  const [selectedWalletType, setSelectedWalletType] = useState<'playground' | 'external'>(() => {
+    if (isPlaygroundConnected) return 'playground';
+    if (isExternalConnected) return 'external';
+    return network === 'testnet' ? 'playground' : 'external';
+  });
   const [selectedNetwork, setSelectedNetwork] = useState<'testnet' | 'mainnet'>(network);
   const [publishData, setPublishData] = useState<PublishData | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -113,12 +121,24 @@ export function DeployDialogV2({
   const { toast } = useToast();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
   const { mutate: connectWallet } = useConnectWallet();
-  // Load publish data when dialog opens
+  // Load publish data and sync wallet type when dialog opens
   useEffect(() => {
-    if (open && lastCompilation?.success) {
-      loadPublishData();
+    if (open) {
+      // Sync wallet type with actual wallet state
+      if (isPlaygroundConnected) {
+        setSelectedWalletType('playground');
+      } else if (isExternalConnected) {
+        setSelectedWalletType('external');
+      } else if (network === 'mainnet') {
+        setSelectedWalletType('external'); // Mainnet requires external
+      }
+      
+      // Load publish data if compilation successful
+      if (lastCompilation?.success) {
+        loadPublishData();
+      }
     }
-  }, [open, lastCompilation, selectedNetwork]);
+  }, [open, lastCompilation, selectedNetwork, isPlaygroundConnected, isExternalConnected, network]);
 
   const loadPublishData = async () => {
     if (!lastCompilation?.success) return;
@@ -144,17 +164,27 @@ export function DeployDialogV2({
     setSelectedWalletType(type);
     
     if (type === 'playground') {
-      try {
-        await connectPlaygroundWallet();
-      } catch (error) {
+      // Connect playground wallet if not already connected
+      if (!isPlaygroundConnected) {
+        try {
+          await connectPlaygroundWallet();
+        } catch (error) {
+          toast({
+            title: "Connection Failed",
+            description: "Failed to connect playground wallet",
+            variant: "destructive",
+          });
+        }
+      }
+    } else if (type === 'external') {
+      // If switching to external but not connected, show message
+      if (!isExternalConnected) {
         toast({
-          title: "Connection Failed",
-          description: "Failed to connect playground wallet",
-          variant: "destructive",
+          title: "Connect External Wallet",
+          description: "Please connect your external wallet to continue",
         });
       }
     }
-    // For external wallet, user needs to manually connect
   };
 
   const handleConnectExternalWallet = () => {
@@ -190,10 +220,10 @@ export function DeployDialogV2({
     }
   };
 
-  // Check wallet connection status
+  // Check wallet connection status based on selected type
   const isWalletConnected = selectedWalletType === 'playground' 
-    ? !!playgroundAddress 
-    : !!currentAccount?.address;
+    ? isPlaygroundConnected 
+    : isExternalConnected;
     
   const walletAddress = selectedWalletType === 'playground' 
     ? playgroundAddress 

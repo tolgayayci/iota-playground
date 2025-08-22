@@ -35,6 +35,7 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
     deployerAddress?: string;
     network?: string;
   }>({});
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0); // Add state to trigger history refresh
   const { toast } = useToast();
 
   const fetchRealModuleInterface = async (packageId: string, network: 'testnet' | 'mainnet' = 'testnet') => {
@@ -439,7 +440,7 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
                                   {currentModule.functions.map((method, index) => (
                                     <ModuleFunctionCard
                                       key={`${currentModule.name}-${method.name}-${index}`}
-                                      method={method}
+                                      method={{ ...method, module: currentModule.name }}
                                       onExecute={handleExecute}
                                       isPackageVerified={isPackageVerified}
                                       isSharedView={isSharedView}
@@ -491,7 +492,78 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
           )}
         </>
       ) : (
-        <ModuleExecutionHistory projectId={projectId} />
+        <>
+          <ModulePackageSelector
+            contractAddress={selectedDeployment?.package_id || ''}
+            onAddressChange={handlePackageChange}
+            error={error}
+            deployments={deployments}
+            isLoading={isLoading}
+          />
+          
+          {/* Deployment Badges - Same as Interface Tab */}
+          {selectedDeployment && (
+            <div className="px-4 py-3 border-b bg-muted/20 flex items-center gap-2 flex-wrap">
+              {/* Wallet Type Badge */}
+              <Badge variant={deploymentMetadata.walletType === 'playground' ? 'default' : 'secondary'} className="gap-1">
+                <Wallet className="h-3 w-3" />
+                {deploymentMetadata.walletType === 'playground' ? 'Playground Wallet' : 'External Wallet'}
+              </Badge>
+              
+              {/* Network Badge */}
+              <Badge variant={selectedDeployment.network === 'mainnet' ? 'destructive' : 'outline'} className="gap-1">
+                <Globe className="h-3 w-3" />
+                {selectedDeployment.network || 'testnet'}
+              </Badge>
+              
+              {/* Deployer Address Badge - Clickable */}
+              {deploymentMetadata.deployerAddress && (
+                <Badge 
+                  variant="outline" 
+                  className="gap-1 cursor-pointer hover:bg-muted transition-colors"
+                  onClick={() => {
+                    const explorerUrl = `https://explorer.iota.org/address/${deploymentMetadata.deployerAddress}?network=${selectedDeployment.network || 'testnet'}`;
+                    window.open(explorerUrl, '_blank');
+                  }}
+                >
+                  <User className="h-3 w-3" />
+                  Deployer: {deploymentMetadata.deployerAddress.slice(0, 6)}...{deploymentMetadata.deployerAddress.slice(-4)}
+                  <ExternalLink className="h-3 w-3 ml-1" />
+                </Badge>
+              )}
+              
+              {/* Package ID Badge - Clickable */}
+              {selectedDeployment.package_id && (
+                <Badge 
+                  variant="outline" 
+                  className="gap-1 cursor-pointer hover:bg-muted transition-colors"
+                  onClick={() => {
+                    const explorerUrl = `https://explorer.iota.org/object/${selectedDeployment.package_id}?network=${selectedDeployment.network || 'testnet'}`;
+                    window.open(explorerUrl, '_blank');
+                  }}
+                >
+                  <Package className="h-3 w-3" />
+                  Package: {selectedDeployment.package_id.slice(0, 6)}...{selectedDeployment.package_id.slice(-4)}
+                  <ExternalLink className="h-3 w-3 ml-1" />
+                </Badge>
+              )}
+            </div>
+          )}
+          
+          {selectedDeployment ? (
+            <ModuleExecutionHistory projectId={projectId} selectedDeployment={selectedDeployment} key={historyRefreshKey} />
+          ) : (
+            <div className="flex-1">
+              <ModuleEmptyState
+                title={isSharedView ? "No package selected" : "Select a deployed package"}
+                description={isSharedView
+                  ? "Please select a package to view its execution history"
+                  : "Deploy your Move package and select it to view execution history"
+                }
+              />
+            </div>
+          )}
+        </>
       )}
 
       {selectedFunction && selectedDeployment && !isSharedView && (
@@ -507,6 +579,11 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
               description: "Function executed successfully",
             });
           }}
+          onExecutionSaved={() => {
+            // Refresh history by changing the key
+            setHistoryRefreshKey(prev => prev + 1);
+          }}
+          network={deploymentMetadata.network as 'testnet' | 'mainnet' || 'testnet'}
         />
       )}
     </div>

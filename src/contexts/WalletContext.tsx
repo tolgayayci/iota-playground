@@ -40,21 +40,28 @@ interface WalletContextType {
   currentWallet: WalletInterface | null;
   isConnected: boolean;
   network: NetworkType;
+  walletType: 'playground' | 'external' | 'none'; // Explicit wallet type tracking
   
   // Playground wallet properties
   isPlaygroundWallet: boolean;
   playgroundAddress: string | null;
+  isPlaygroundConnected: boolean; // Helper for playground connection status
+  
+  // External wallet properties
+  isExternalConnected: boolean; // Helper for external connection status
   
   // Network management
   switchNetwork: (network: NetworkType) => void;
   
   // Wallet validation
   isNetworkCompatible: (network: NetworkType) => boolean;
+  canUseWalletForNetwork: (walletType: 'playground' | 'external', network: NetworkType) => boolean;
   
   // Wallet management
   connectPlaygroundWallet: () => Promise<void>;
   connectExternalWallet: (walletName?: string) => Promise<void>;
   disconnectWallet: () => void;
+  getCurrentWalletType: () => 'playground' | 'external' | 'none';
   
   // Transaction execution
   signAndExecuteTransaction: (transaction: Transaction) => Promise<any>;
@@ -79,6 +86,7 @@ export function useWallet() {
 function WalletContextProvider({ children }: { children: ReactNode }) {
   const [currentWallet, setCurrentWallet] = useState<WalletInterface | null>(null);
   const [network, setNetwork] = useState<NetworkType>('testnet');
+  const [walletType, setWalletType] = useState<'playground' | 'external' | 'none'>('none');
   const { toast } = useToast();
 
   // External wallet hooks
@@ -106,8 +114,16 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
 
       const savedWalletType = localStorage.getItem('iota_wallet_type');
 
-      // Handle external wallet connection
-      if (currentAccount && currentAccount.address && !isStale) {
+      // Priority: Check saved wallet type first to maintain user's choice
+      if (savedWalletType === 'playground' && !isStale) {
+        // User explicitly selected playground wallet
+        const playgroundWallet = createPlaygroundWallet();
+        if (playgroundWallet) {
+          setCurrentWallet(playgroundWallet);
+          setWalletType('playground');
+        }
+      } else if (savedWalletType === 'external' && currentAccount && currentAccount.address && !isStale) {
+        // User selected external wallet and it's connected
         const externalWallet = new ExternalWallet(
           currentAccount.address,
           async (transaction: Transaction) => {
@@ -127,19 +143,38 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
         );
         
         setCurrentWallet(externalWallet);
+        setWalletType('external');
+      } else if (currentAccount && currentAccount.address && !savedWalletType && !isStale) {
+        // External wallet connected but no saved preference - use external
+        const externalWallet = new ExternalWallet(
+          currentAccount.address,
+          async (transaction: Transaction) => {
+            return new Promise((resolve, reject) => {
+              signAndExecute(
+                {
+                  transaction,
+                  chain: network === 'testnet' ? 'iota:testnet' : 'iota:mainnet',
+                },
+                {
+                  onSuccess: (result) => resolve(result),
+                  onError: (error) => reject(error),
+                }
+              );
+            });
+          }
+        );
+        
+        setCurrentWallet(externalWallet);
+        setWalletType('external');
         localStorage.setItem('iota_wallet_type', 'external');
-      }
-      // Handle playground wallet connection (only if no external wallet is connected)
-      else if (savedWalletType === 'playground' && !currentAccount && !isStale) {
-        const playgroundWallet = createPlaygroundWallet();
-        if (playgroundWallet) {
-          setCurrentWallet(playgroundWallet);
-        }
-      }
-      // Clear wallet if no valid connection
-      else if (!currentAccount && savedWalletType !== 'playground' && !isStale) {
+      } else if (!isStale) {
+        // No wallet connected
         setCurrentWallet(null);
-        localStorage.removeItem('iota_wallet_type');
+        setWalletType('none');
+        if (savedWalletType === 'external' && !currentAccount) {
+          // External wallet was saved but disconnected
+          localStorage.removeItem('iota_wallet_type');
+        }
       }
     };
 
@@ -189,6 +224,11 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Disconnect external wallet if connected
+    if (currentAccount) {
+      disconnect();
+    }
+
     try {
       const playgroundWallet = createPlaygroundWallet();
       if (!playgroundWallet) {
@@ -196,6 +236,7 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
       }
 
       setCurrentWallet(playgroundWallet);
+      setWalletType('playground');
       localStorage.setItem('iota_wallet_type', 'playground');
       
       toast({
@@ -214,16 +255,26 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
 
   const connectExternalWallet = async (walletName?: string) => {
     try {
+      // Clear playground wallet if connected
+      if (walletType === 'playground') {
+        setCurrentWallet(null);
+        localStorage.removeItem('iota_wallet_type');
+      }
+
       if (walletName) {
         const wallet = wallets.find(w => w.name === walletName);
         if (wallet) {
           connectWallet({ wallet });
+          setWalletType('external');
+          localStorage.setItem('iota_wallet_type', 'external');
         }
       } else {
         // Connect to first available wallet
         const firstWallet = wallets[0];
         if (firstWallet) {
           connectWallet({ wallet: firstWallet });
+          setWalletType('external');
+          localStorage.setItem('iota_wallet_type', 'external');
         }
       }
     } catch (error) {
@@ -241,6 +292,7 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
       disconnect();
     }
     setCurrentWallet(null);
+    setWalletType('none');
     localStorage.removeItem('iota_wallet_type');
     
     toast({
@@ -260,18 +312,37 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
   // Compute playground wallet properties
   const isPlaygroundWallet = currentWallet instanceof PlaygroundWallet;
   const playgroundAddress = isPlaygroundWallet ? currentWallet.address : null;
+  const isPlaygroundConnected = walletType === 'playground' && !!currentWallet;
+  const isExternalConnected = walletType === 'external' && !!currentAccount;
+
+  // Helper functions
+  const getCurrentWalletType = (): 'playground' | 'external' | 'none' => {
+    return walletType;
+  };
+
+  const canUseWalletForNetwork = (wallet: 'playground' | 'external', targetNetwork: NetworkType): boolean => {
+    if (wallet === 'playground' && targetNetwork === 'mainnet') {
+      return false; // Playground only supports testnet
+    }
+    return true; // External wallets support both networks
+  };
 
   const value: WalletContextType = {
     currentWallet,
     isConnected: !!currentWallet,
     network,
+    walletType,
     isPlaygroundWallet,
     playgroundAddress,
+    isPlaygroundConnected,
+    isExternalConnected,
     switchNetwork,
     isNetworkCompatible,
+    canUseWalletForNetwork,
     connectPlaygroundWallet,
     connectExternalWallet,
     disconnectWallet,
+    getCurrentWalletType,
     signAndExecuteTransaction: executeTransaction,
     availableWallets: wallets,
     currentAccount,

@@ -25,6 +25,8 @@ import { Transaction } from '@iota/iota-sdk/transactions';
 import { IotaClient, getFullnodeUrl } from '@iota/iota-sdk/client';
 import { useSignAndExecuteTransaction } from '@iota/dapp-kit';
 import { useWallet } from '@/contexts/WalletContext';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface PTBExecuteDialogV2Props {
   open: boolean;
@@ -34,6 +36,7 @@ interface PTBExecuteDialogV2Props {
   projectId: string;
   onExecute: (result: any) => void;
   network?: 'testnet' | 'mainnet';
+  onExecutionSaved?: () => void; // Callback when execution is saved to history
 }
 
 interface ExecutionResult {
@@ -67,7 +70,8 @@ export function PTBExecuteDialogV2({
   packageId,
   projectId,
   onExecute,
-  network = 'testnet'
+  network = 'testnet',
+  onExecutionSaved
 }: PTBExecuteDialogV2Props) {
   // Core state
   const [inputs, setInputs] = useState<Record<string, string>>({});
@@ -81,7 +85,67 @@ export function PTBExecuteDialogV2({
   // Hooks
   const { toast } = useToast();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
-  const { currentAccount } = useWallet();
+  const { 
+    currentAccount, 
+    walletType, 
+    isPlaygroundConnected, 
+    isExternalConnected,
+    connectPlaygroundWallet,
+    connectExternalWallet,
+    network: currentNetwork 
+  } = useWallet();
+  const { user } = useAuth();
+  
+  // Save execution history to database
+  const saveExecutionHistory = async (
+    status: 'success' | 'failed',
+    functionName: string,
+    moduleName: string | undefined,
+    params: any[],
+    executionResult: any,
+    txHash?: string,
+    gasUsed?: number
+  ) => {
+    if (!user?.id) return;
+    
+    // Use fallback module name if not provided
+    const finalModuleName = moduleName || 'unknown_module';
+    
+    try {
+      const { error } = await supabase
+        .from('ptb_history')
+        .insert({
+          user_id: user.id,
+          project_id: projectId,
+          ptb_config: {
+            functionName,
+            moduleName: finalModuleName,
+            packageId,
+            parameters: params,
+            deploymentId: packageId
+          },
+          execution_result: executionResult,
+          network,
+          transaction_hash: txHash,
+          gas_used: gasUsed,
+          status,
+          created_at: new Date().toISOString()
+        });
+      
+      if (error) {
+        console.error('Failed to save execution history:', error);
+        console.error('Details:', { functionName, moduleName: finalModuleName, packageId, params });
+      } else {
+        console.log('Execution history saved successfully for', functionName, 'in module', finalModuleName);
+        // Trigger callback to refresh history
+        if (onExecutionSaved) {
+          onExecutionSaved();
+        }
+      }
+    } catch (err) {
+      console.error('Error saving execution history:', err);
+    }
+  };
   
   // Derived state
   const isEntryFunction = method.is_entry === true;
@@ -98,35 +162,49 @@ export function PTBExecuteDialogV2({
     let selection: WalletSelection;
     
     if (isEntryFunction) {
-      // Entry functions need a wallet
+      // Entry functions need a wallet - use the currently connected wallet
       if (network === 'testnet') {
-        // Can use either playground or external wallet on testnet
-        if (currentAccount) {
-          selection = { 
-            type: 'external', 
-            canExecute: true,
-            message: 'Using connected wallet'
-          };
-        } else {
+        // Testnet: Check what wallet is actually connected
+        if (isPlaygroundConnected) {
           selection = { 
             type: 'playground', 
             canExecute: true,
-            message: 'Using playground wallet (testnet only)'
+            message: 'Using Playground Wallet (testnet only)'
+          };
+        } else if (isExternalConnected) {
+          selection = { 
+            type: 'external', 
+            canExecute: true,
+            message: `Using ${currentAccount?.label || 'External Wallet'}`
+          };
+        } else {
+          // No wallet connected - suggest connection
+          selection = { 
+            type: 'none', 
+            canExecute: false,
+            message: 'Connect a wallet to execute this function (Playground or External)'
           };
         }
       } else {
         // Mainnet requires external wallet
-        if (currentAccount) {
+        if (isExternalConnected) {
           selection = { 
             type: 'external', 
             canExecute: true,
-            message: 'Using connected wallet'
+            message: `Using ${currentAccount?.label || 'External Wallet'} (mainnet)`
+          };
+        } else if (isPlaygroundConnected) {
+          // Playground wallet connected but on mainnet
+          selection = { 
+            type: 'none', 
+            canExecute: false,
+            message: 'Playground wallet not supported on mainnet. Please connect an external wallet.'
           };
         } else {
           selection = { 
             type: 'none', 
             canExecute: false,
-            message: 'Please connect wallet for mainnet'
+            message: 'Connect an external wallet for mainnet execution'
           };
         }
       }
@@ -140,7 +218,7 @@ export function PTBExecuteDialogV2({
     }
     
     setWalletSelection(selection);
-  }, [isEntryFunction, network, currentAccount, open]);
+  }, [isEntryFunction, network, currentAccount, isPlaygroundConnected, isExternalConnected, open]);
   
   // Update execution state based on inputs
   useEffect(() => {
@@ -320,10 +398,8 @@ export function PTBExecuteDialogV2({
     try {
       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
       
-      const moduleName = method.module;
-      if (!moduleName) {
-        throw new Error('Module name is required');
-      }
+      const moduleName = method.module || 'unknown_module';
+      console.log('Using module name:', moduleName, 'for function:', method.name);
       
       const functionArgs = parameters.map(param => ({
         value: inputs[param.name] || '',
@@ -369,10 +445,8 @@ export function PTBExecuteDialogV2({
     setResult({ status: 'pending' });
     
     try {
-      const moduleName = method.module;
-      if (!moduleName) {
-        throw new Error('Module name is required');
-      }
+      const moduleName = method.module || 'unknown_module';
+      console.log('Using module name:', moduleName, 'for function:', method.name);
       
       const functionTarget = `${packageId}::${moduleName}::${method.name}`;
       
@@ -383,6 +457,17 @@ export function PTBExecuteDialogV2({
           setResult(result);
           setExecutionState(ExecutionState.SUCCESS);
           onExecute(result);
+          
+          // Save execution history for playground wallet
+          await saveExecutionHistory(
+            'success',
+            method.name,
+            moduleName,
+            Object.values(inputs),
+            result,
+            result.transactionDigest,
+            result.gasUsed
+          );
           
           toast({
             title: "Success",
@@ -405,6 +490,11 @@ export function PTBExecuteDialogV2({
             return createTransactionArgument(value, param.type, tx);
           });
           
+          // Capture inputs for the callback closure
+          const inputValues = Object.values(inputs);
+          const capturedModuleName = moduleName;
+          const capturedMethodName = method.name;
+          
           // Add the move call
           tx.moveCall({
             target: functionTarget,
@@ -421,7 +511,7 @@ export function PTBExecuteDialogV2({
               showBalanceChanges: true,
             }
           }, {
-            onSuccess: (result) => {
+            onSuccess: async (result) => {
               console.log('Transaction successful:', result);
               
               // Extract ALL relevant data from the transaction
@@ -479,12 +569,29 @@ export function PTBExecuteDialogV2({
               setExecutionState(ExecutionState.SUCCESS);
               onExecute(successResult);
               
+              // Save to execution history
+              console.log('Saving execution history for:', capturedMethodName, 'in module:', capturedModuleName, 'with params:', inputValues);
+              await saveExecutionHistory(
+                'success',
+                capturedMethodName,
+                capturedModuleName,
+                inputValues,
+                {
+                  success: true,
+                  transactionDigest: result.digest,
+                  gasUsed: result.effects?.gasUsed?.computationCost,
+                  returnValues: outputs
+                },
+                result.digest,
+                parseInt(result.effects?.gasUsed?.computationCost || '0')
+              );
+              
               toast({
                 title: "Success",
                 description: `Transaction ${result.digest.slice(0, 8)}... executed successfully`,
               });
             },
-            onError: (error) => {
+            onError: async (error) => {
               console.error('Transaction execution failed:', error);
               
               // Extract detailed error information
@@ -503,6 +610,15 @@ export function PTBExecuteDialogV2({
               
               setResult(errorResult);
               setExecutionState(ExecutionState.ERROR);
+              
+              // Save failed execution to history
+              await saveExecutionHistory(
+                'failed',
+                capturedMethodName,
+                capturedModuleName,
+                inputValues,
+                { error: errorMessage }
+              );
               
               toast({
                 title: "Transaction Failed",
@@ -586,6 +702,18 @@ export function PTBExecuteDialogV2({
           setExecutionState(ExecutionState.SUCCESS);
           onExecute(successResult);
           
+          // Save view function execution to history
+          const moduleNameForView = method.module || 'unknown_module';
+          await saveExecutionHistory(
+            'success',
+            method.name,
+            moduleNameForView,
+            Object.values(inputs),
+            { returnValues: returnValues },
+            undefined, // No transaction hash for view functions
+            parseInt(gasUsed || '0')
+          );
+          
           toast({
             title: "Success",
             description: "View function executed successfully",
@@ -610,6 +738,16 @@ export function PTBExecuteDialogV2({
         }] : []
       });
       setExecutionState(ExecutionState.ERROR);
+      
+      // Save failed execution to history  
+      const moduleNameForGeneralError = method.module || 'unknown_module';
+      await saveExecutionHistory(
+        'failed',
+        method.name,
+        moduleNameForGeneralError,
+        Object.values(inputs),
+        { error: errorMessage }
+      );
       
       toast({
         title: "Execution Failed",
@@ -836,6 +974,37 @@ export function PTBExecuteDialogV2({
           >
             Close
           </Button>
+          
+          {/* Show wallet connection button if needed */}
+          {isEntryFunction && !walletSelection.canExecute && (
+            <>
+              {network === 'testnet' && !isPlaygroundConnected && !isExternalConnected && (
+                <Button
+                  variant="secondary"
+                  onClick={async () => {
+                    await connectPlaygroundWallet();
+                  }}
+                  className="gap-2"
+                >
+                  <Wallet className="h-4 w-4" />
+                  Connect Playground
+                </Button>
+              )}
+              {(!isExternalConnected && (network === 'mainnet' || (network === 'testnet' && !isPlaygroundConnected))) && (
+                <Button
+                  variant="secondary"
+                  onClick={async () => {
+                    await connectExternalWallet();
+                  }}
+                  className="gap-2"
+                >
+                  <Wallet className="h-4 w-4" />
+                  Connect Wallet
+                </Button>
+              )}
+            </>
+          )}
+          
           <Button
             onClick={handleExecute}
             disabled={isButtonDisabled()}
