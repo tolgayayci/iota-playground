@@ -5,6 +5,22 @@ import { logger } from '../utils/logger';
 
 const router = Router();
 
+// View function schema - for read-only functions
+const viewFunctionSchema = Joi.object({
+  functionTarget: Joi.string().required(), // e.g., "0x123::counter::get_value"
+  functionArgs: Joi.array().items(
+    Joi.alternatives().try(
+      Joi.string(), // Legacy support
+      Joi.object({
+        value: Joi.string().required(),
+        type: Joi.string().required()
+      })
+    )
+  ).default([]),
+  network: Joi.string().valid('testnet', 'mainnet').default('testnet'),
+  sender: Joi.string().optional(), // Optional sender address for owned objects
+});
+
 // Execute PTB with playground wallet
 const executePTBSchema = Joi.object({
   projectId: Joi.string().required(),
@@ -19,6 +35,54 @@ const executePTBSchema = Joi.object({
     )
   ).default([]),
   network: Joi.string().valid('testnet', 'mainnet').default('testnet'),
+});
+
+// View function endpoint - for read-only functions
+router.post('/view', async (req, res, next) => {
+  try {
+    const { error, value } = viewFunctionSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ 
+        success: false,
+        message: error.details[0].message 
+      });
+    }
+
+    const { functionTarget, functionArgs, network, sender } = value;
+
+    logger.info(`Executing view function: ${functionTarget}`);
+    logger.info(`Arguments: ${JSON.stringify(functionArgs)}`);
+    logger.info(`Sender: ${sender || 'default'}`);
+
+    // Import the view function executor
+    const { executeViewFunction } = await import('../services/ptbExecuteService');
+    const result = await executeViewFunction(
+      functionTarget,
+      functionArgs,
+      network,
+      sender
+    );
+
+    if (result.success) {
+      logger.info(`View function execution successful`);
+      res.json({
+        success: true,
+        data: result
+      });
+    } else {
+      logger.error(`View function execution failed: ${result.error}`);
+      res.status(400).json({
+        success: false,
+        message: result.error || 'View function execution failed'
+      });
+    }
+  } catch (error) {
+    logger.error('View function execution error:', error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'View function execution failed'
+    });
+  }
 });
 
 router.post('/execute', async (req, res, next) => {

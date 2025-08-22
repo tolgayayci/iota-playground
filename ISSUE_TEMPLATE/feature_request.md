@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest an idea for Wizard
+about: Suggest an idea for IOTA Playground
 title: "[FEATURE] "
 labels: enhancement
 assignees: ''

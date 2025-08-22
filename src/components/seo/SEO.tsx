@@ -9,40 +9,40 @@ interface SEOProps {
   type?: string;
 }
 
-const DEFAULT_TITLE = 'Wizard | Arbitrum Stylus Playground';
-const DEFAULT_DESCRIPTION = 'Build, test, and deploy Rust smart contracts on Arbitrum Stylus directly in your browser. The fastest and most powerful development environment for Stylus contracts with real-time compilation, testing, and deployment.';
+const DEFAULT_TITLE = 'IOTA Playground | Move Smart Contract Development';
+const DEFAULT_DESCRIPTION = 'Build, test, and deploy Move smart contracts on IOTA directly in your browser. The fastest and most powerful development environment for IOTA Move contracts with real-time compilation, testing, and deployment.';
 const DEFAULT_KEYWORDS = [
   // Primary keywords
-  'Arbitrum Stylus',
-  'Stylus Smart Contracts',
-  'Arbitrum Development',
-  'Rust Smart Contracts',
-  'Stylus Playground',
-  'Arbitrum IDE',
+  'IOTA Move',
+  'Move Smart Contracts',
+  'IOTA Development',
+  'Move Programming Language',
+  'IOTA Playground',
+  'IOTA IDE',
   // Secondary keywords
   'Web3 Development',
   'Blockchain Development',
   'Smart Contract IDE',
-  'Layer 2 Development',
-  'Ethereum Layer 2',
-  'Arbitrum L2',
+  'DLT Development',
+  'IOTA Network',
+  'IOTA Blockchain',
   // Long-tail keywords
-  'Build Stylus Smart Contracts',
-  'Deploy on Arbitrum Stylus',
-  'Rust Contract Development',
-  'Arbitrum Smart Contract Testing',
-  'Stylus Development Environment',
-  'Arbitrum Sepolia Testnet',
-  'Superposition Testnet',
+  'Build Move Smart Contracts',
+  'Deploy on IOTA',
+  'Move Contract Development',
+  'IOTA Smart Contract Testing',
+  'Move Development Environment',
+  'IOTA Testnet',
+  'IOTA Mainnet',
   // Related terms
-  'WebAssembly Smart Contracts',
-  'WASM Blockchain',
+  'Move Virtual Machine',
+  'Object-based Programming',
   'Zero Setup Development',
   'Browser-based IDE'
 ];
 
-const DEFAULT_IMAGE = 'https://thewizard.app/og-image.png';
-const DEFAULT_URL = 'https://thewizard.app';
+const DEFAULT_IMAGE = 'https://playground.iota.org/og-image.png';
+const DEFAULT_URL = 'https://playground.iota.org';
 
 export function SEO({
   title = DEFAULT_TITLE,
@@ -52,7 +52,7 @@ export function SEO({
   url = DEFAULT_URL,
   type = 'website'
 }: SEOProps) {
-  const fullTitle = title === DEFAULT_TITLE ? title : `${title} | Wizard`;
+  const fullTitle = title === DEFAULT_TITLE ? title : `${title} | IOTA Playground`;
 
   useEffect(() => {
     // Update meta tags
@@ -68,22 +68,22 @@ export function SEO({
     updateMetaTag('og:image', image);
     updateMetaTag('og:url', url);
     updateMetaTag('og:type', type);
-    updateMetaTag('og:site_name', 'Wizard - Arbitrum Stylus IDE');
+    updateMetaTag('og:site_name', 'IOTA Playground - Move Smart Contract IDE');
 
     // Twitter meta tags
     updateMetaTag('twitter:card', 'summary_large_image');
     updateMetaTag('twitter:title', fullTitle);
     updateMetaTag('twitter:description', description);
     updateMetaTag('twitter:image', image);
-    updateMetaTag('twitter:site', '@WizardStylus');
+    updateMetaTag('twitter:site', '@iota');
 
     // Additional meta tags for SEO
-    updateMetaTag('application-name', 'Wizard - Arbitrum Stylus IDE');
-    updateMetaTag('apple-mobile-web-app-title', 'Wizard - Stylus IDE');
+    updateMetaTag('application-name', 'IOTA Playground - Move Smart Contract IDE');
+    updateMetaTag('apple-mobile-web-app-title', 'IOTA Playground');
     updateMetaTag('theme-color', '#000000');
     updateMetaTag('robots', 'index, follow, max-image-preview:large');
     updateMetaTag('googlebot', 'index, follow');
-    updateMetaTag('author', 'Wizard');
+    updateMetaTag('author', 'IOTA Foundation');
     updateMetaTag('language', 'English');
 
     // Mobile meta tags
@@ -170,15 +170,15 @@ function addStructuredData({
     },
     author: {
       '@type': 'Organization',
-      name: 'Wizard',
-      url: 'https://thewizard.app'
+      name: 'IOTA Foundation',
+      url: 'https://playground.iota.org'
     },
     browserRequirements: 'Requires a modern web browser with JavaScript enabled',
     featureList: [
-      'Real-time Rust compilation',
+      'Real-time Move compilation',
       'Smart contract deployment',
       'Built-in testing environment',
-      'Arbitrum Stylus integration',
+      'IOTA blockchain integration',
       'Zero setup required',
       'Browser-based development'
     ],

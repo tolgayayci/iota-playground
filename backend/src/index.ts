@@ -21,6 +21,7 @@ import deployV2Router from './routes/deployV2';
 import projectRouter from './routes/projects';
 import healthRouter from './routes/health';
 import ptbExecuteRouter from './routes/ptbExecute';
+import moveTomlRouter from './routes/moveToml';
 
 // Import middleware (after dotenv is loaded)
 import { errorHandler } from './middleware/errorHandler';
@@ -51,6 +52,7 @@ app.use('/api/deploy', deployRouter); // Legacy deployment endpoint
 app.use('/api/v2/deploy', deployV2Router); // New deployment with SDK
 app.use('/api/v2/ptb', ptbExecuteRouter); // PTB execution with playground wallet
 app.use('/api/projects', authentication, projectRouter);
+app.use('/api', authentication, moveTomlRouter); // Move.toml endpoints
 
 // Error handling
 app.use(errorHandler);

@@ -1,6 +1,6 @@
-# Contributing to Wizard
+# Contributing to IOTA Playground
 
-Thank you for your interest in contributing to Wizard! We aim to make smart contract development on Arbitrum Stylus accessible to everyone, and we're excited to have you join us in this mission.
+Thank you for your interest in contributing to IOTA Playground! We aim to make smart contract development on IOTA Move accessible to everyone, and we're excited to have you join us in this mission.
 
 ## 🌟 Code of Conduct
 
@@ -8,7 +8,7 @@ By participating in this project, you agree to abide by our Code of Conduct. Ple
 
 ## 🚀 How to Contribute
 
-There are many ways you can contribute to Wizard:
+There are many ways you can contribute to IOTA Playground:
 
 1. **Report Bugs**
    - Use the GitHub issue tracker
@@ -39,8 +39,8 @@ There are many ways you can contribute to Wizard:
 2. **Local Development**
    ```bash
    # Clone your fork
-   git clone https://github.com/YOUR_USERNAME/wizard.git
-   cd wizard
+   git clone https://github.com/YOUR_USERNAME/iota-playground.git
+   cd iota-playground
 
    # Install dependencies
    npm install
@@ -81,7 +81,7 @@ There are many ways you can contribute to Wizard:
 ## 🏗️ Project Structure
 
 ```
-wizard/
+iota-playground/
 ├── src/
 │   ├── components/    # React components
 │   ├── hooks/        # Custom React hooks
@@ -147,8 +147,8 @@ By contributing, you agree that your contributions will be licensed under the MI
 
 ## 🤝 Getting Help
 
-- Join official [Telegram channel](https://t.me/arbitrum_stylus)
+- Join official [Discord server](https://discord.iota.org)
 - Create a GitHub issue
-- Read our [documentation](https://docs.thewizard.app)
+- Read our [documentation](https://docs.iota.org)
 
-Thank you for contributing to Wizard! 🧙‍♂️
+Thank you for contributing to IOTA Playground! 🚀

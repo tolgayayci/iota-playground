@@ -32,6 +32,9 @@ import {
   Play,
   Code,
   Bug,
+  TestTube,
+  Package,
+  FileText
 } from 'lucide-react';
 import { CompilationResult } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
@@ -347,6 +350,17 @@ export function DeployDialogV2({
       return;
     }
 
+    // Make sure we have publish data loaded
+    if (!publishData) {
+      toast({
+        title: "Loading Contract Data",
+        description: "Please wait for contract data to load.",
+      });
+      // Try to load publish data if not already loaded
+      await loadPublishData();
+      return;
+    }
+
     setIsDeploying(true);
     setDeploymentStep(0);
     
@@ -486,44 +500,10 @@ export function DeployDialogV2({
             let packageId: string | undefined;
             
             console.log('🔍 Analyzing transaction result structure...');
+            console.log('🔍 Full result:', JSON.stringify(result, null, 2));
             console.log('🔍 Has objectChanges?', !!result.objectChanges);
             console.log('🔍 Has effects?', !!result.effects);
-            console.log('🔍 Has bytes?', !!result.bytes);
-            
-            // If we have the raw transaction bytes, we need to decode them to get the package ID
-            // The package ID is embedded in the transaction data
-            if (result.bytes && !result.objectChanges) {
-              console.log('📦 Transaction has bytes but no objectChanges, attempting to extract package ID from bytes...');
-              
-              // The package ID is typically the first address in the transaction bytes after the sender
-              // In the bytes, look for addresses (32 bytes starting with known patterns)
-              try {
-                // Convert base64 to hex for easier parsing
-                const bytes = atob(result.bytes);
-                const hexBytes = Array.from(bytes).map(b => b.charCodeAt(0).toString(16).padStart(2, '0')).join('');
-                
-                // Look for potential package IDs in the hex (64 character hex strings)
-                // Package IDs are 32 bytes (64 hex chars) and often start with patterns
-                const addressPattern = /[a-f0-9]{64}/g;
-                const matches = hexBytes.match(addressPattern);
-                
-                if (matches && matches.length > 0) {
-                  // The first match after the sender is often the package ID
-                  // Skip the sender address (first match) and look for the package
-                  for (let i = 1; i < Math.min(matches.length, 5); i++) {
-                    const potentialPackageId = '0x' + matches[i];
-                    // Verify it's not all zeros or ones
-                    if (!matches[i].match(/^0+$/) && !matches[i].match(/^f+$/)) {
-                      packageId = potentialPackageId;
-                      console.log(`📦 Potential package ID found at position ${i}:`, packageId);
-                      break;
-                    }
-                  }
-                }
-              } catch (error) {
-                console.error('Failed to parse transaction bytes:', error);
-              }
-            }
+            console.log('🔍 Has digest?', !!result.digest);
             
             // Primary method: Look for published package in objectChanges
             if (!packageId && result.objectChanges) {
@@ -566,9 +546,10 @@ export function DeployDialogV2({
               }
             }
             
-            // Parse from digest - ALWAYS query the transaction for accurate data
-            if (!packageId && result.digest) {
-              console.log('📦 Querying transaction details from chain using digest:', result.digest);
+            // ALWAYS query the blockchain for complete transaction details
+            // The dapp-kit often returns incomplete data for external wallet transactions
+            if (result.digest) {
+              console.log('📦 Querying full transaction details from blockchain using digest:', result.digest);
               try {
                 const client = new IotaClient({ url: getFullnodeUrl(selectedNetwork) });
                 const txDetails = await client.getTransactionBlock({
@@ -584,62 +565,94 @@ export function DeployDialogV2({
                 console.log('📦 Full transaction details from chain:', JSON.stringify(txDetails, null, 2));
                 
                 // Look for published package in the detailed response
-                if (txDetails.objectChanges) {
+                if (txDetails.objectChanges && Array.isArray(txDetails.objectChanges)) {
+                  // Find the published package object
                   const published = txDetails.objectChanges.find((change: any) => 
                     change.type === 'published'
                   );
                   
                   if (published && published.packageId) {
                     packageId = published.packageId;
-                    console.log('📦 Found package ID from published object:', packageId);
-                  } else {
-                    // Look for any created object that might be the package
+                    console.log('✅ Found package ID from published object:', packageId);
+                    
+                    // Validate package ID format (should be 66 chars: 0x + 64 hex)
+                    if (packageId && packageId.length === 66 && packageId.startsWith('0x')) {
+                      console.log('✅ Package ID is valid format');
+                    } else {
+                      console.warn('⚠️ Package ID format seems incorrect:', packageId);
+                    }
+                  }
+                  
+                  // If no published object, look for other package-related changes
+                  if (!packageId) {
+                    console.log('🔍 No published object found, checking all object changes...');
                     for (const change of txDetails.objectChanges) {
-                      console.log('📦 Checking object change:', change);
-                      if (change.packageId) {
+                      console.log('📦 Object change:', change);
+                      if (change.packageId && change.packageId.startsWith('0x') && change.packageId.length === 66) {
                         packageId = change.packageId;
-                        console.log('📦 Found package ID in object change:', packageId);
+                        console.log('✅ Found package ID in object change:', packageId);
                         break;
                       }
                     }
                   }
                 }
                 
-                // If still no package ID, check the effects for created objects
+                // If still no package ID, check the effects for created objects with Immutable owner
                 if (!packageId && txDetails.effects?.created) {
-                  console.log('📦 Checking created objects in effects...');
+                  console.log('🔍 Checking created objects in effects...');
                   for (const created of txDetails.effects.created) {
                     console.log('📦 Created object:', created);
                     // Packages have Immutable owner
-                    if (created.owner === 'Immutable' || (created.owner && created.owner.Immutable)) {
-                      packageId = created.reference?.objectId || created.objectId;
-                      console.log('📦 Found immutable object (likely package):', packageId);
-                      break;
-                    }
-                  }
-                }
-                
-                // Check events for Publish event
-                if (!packageId && txDetails.events) {
-                  console.log('📦 Checking events for package publish...');
-                  for (const event of txDetails.events) {
-                    console.log('📦 Event:', event);
-                    if (event.type === '0x2::package::PublishEvent' || event.type?.includes('Publish')) {
-                      // The package ID might be in the event data
-                      if (event.parsedJson?.package_id) {
-                        packageId = event.parsedJson.package_id;
-                        console.log('📦 Found package ID in publish event:', packageId);
+                    if (created.owner === 'Immutable' || (created.owner && created.owner === 'Immutable')) {
+                      const objId = created.reference?.objectId || created.objectId;
+                      // Validate it's a proper object ID
+                      if (objId && objId.startsWith('0x') && objId.length === 66) {
+                        packageId = objId;
+                        console.log('✅ Found package ID from immutable object:', packageId);
                         break;
                       }
                     }
                   }
                 }
-              } catch (error) {
-                console.error('Failed to query transaction details:', error);
                 
-                // As a last resort, use the transaction digest to link to explorer
-                console.log('⚠️ Could not determine package ID, will use transaction digest for tracking');
+                // Check events for package publish event
+                if (!packageId && txDetails.events && Array.isArray(txDetails.events)) {
+                  console.log('🔍 Checking events for package publish...');
+                  for (const event of txDetails.events) {
+                    console.log('📦 Event:', event);
+                    // Look for package publish events
+                    if (event.type && (event.type.includes('package') || event.type.includes('Publish'))) {
+                      // Check if there's a package ID in the event data
+                      if (event.parsedJson?.package_id) {
+                        packageId = event.parsedJson.package_id;
+                        console.log('✅ Found package ID in publish event:', packageId);
+                        break;
+                      } else if (event.packageId) {
+                        packageId = event.packageId;
+                        console.log('✅ Found package ID in event:', packageId);
+                        break;
+                      }
+                    }
+                  }
+                }
+                
+                if (!packageId) {
+                  console.error('❌ Could not extract package ID from transaction');
+                  console.log('📋 Transaction structure:', {
+                    hasObjectChanges: !!txDetails.objectChanges,
+                    objectChangesCount: txDetails.objectChanges?.length || 0,
+                    hasEffects: !!txDetails.effects,
+                    createdCount: txDetails.effects?.created?.length || 0,
+                    hasEvents: !!txDetails.events,
+                    eventsCount: txDetails.events?.length || 0
+                  });
+                }
+              } catch (error) {
+                console.error('❌ Failed to query transaction details from blockchain:', error);
+                console.log('⚠️ Will use transaction digest for tracking');
               }
+            } else {
+              console.error('❌ No transaction digest available to query blockchain');
             }
             
             console.log('📦 Final package ID:', packageId);
@@ -675,11 +688,19 @@ export function DeployDialogV2({
             console.log('📊 Project ID:', projectId);
             console.log('🌐 Network:', selectedNetwork);
             
-            // Always try to save deployment info, even without package ID
+            // Save deployment info to database
             if (user?.id && result.digest) {
               try {
-                // Use transaction digest as fallback identifier if no package ID
-                const deploymentId = packageId || `tx_${result.digest}`;
+                // Only save if we have a valid package ID or use transaction digest as fallback
+                const isValidPackageId = packageId && 
+                                         packageId.startsWith('0x') && 
+                                         packageId.length === 66 &&
+                                         /^0x[a-f0-9]{64}$/i.test(packageId);
+                
+                const deploymentId = isValidPackageId ? packageId : `tx_${result.digest}`;
+                
+                console.log('💾 Deployment ID to save:', deploymentId);
+                console.log('💾 Is valid package ID:', isValidPackageId);
                 
                 // Extract ABI from compilation result
                 const compilationAbi = lastCompilation?.abi;
@@ -697,17 +718,22 @@ export function DeployDialogV2({
 
                 console.log('🔧 ABI Functions to save:', abiFunctions);
 
+                // Store deployer address in abi metadata
+                const abiWithMetadata = {
+                  functions: abiFunctions,
+                  deployerAddress: currentAccount.address
+                };
+
                 const deploymentData = {
                   project_id: projectId,
                   user_id: user.id,
                   package_id: deploymentId,
                   module_address: deploymentId,
-                  module_name: 'external_deployment',
+                  module_name: 'external_deployment', // This identifies it as external wallet
                   network: selectedNetwork,
-                  abi: abiFunctions,
+                  abi: abiWithMetadata,
                   transaction_hash: result.digest,
-                  gas_used: parseInt(result.effects?.gasUsed?.computationCost || '0'),
-                  wallet_type: 'external'
+                  gas_used: parseInt(result.effects?.gasUsed?.computationCost || '0')
                 };
 
                 console.log('💾 Attempting to save deployment data:', deploymentData);
@@ -738,9 +764,9 @@ export function DeployDialogV2({
                         packageId,
                         transactionDigest: result.digest,
                         network: selectedNetwork,
-                        abi: abiFunctions,
+                        abi: abiWithMetadata, // Send abi with metadata
                         gasUsed: result.effects?.gasUsed?.computationCost,
-                        userId: user.id,
+                        userId: user.id
                       }),
                     });
                     
@@ -763,31 +789,29 @@ export function DeployDialogV2({
                   }));
                 }
 
-                // Update project with deployment info
-                console.log('📝 Updating project with deployment info...');
-                const projectUpdateData = {
-                  package_id: packageId,
-                  module_address: packageId,
-                  last_deployment: {
-                    packageId: packageId,
-                    transactionDigest: result.digest,
-                    network: selectedNetwork,
-                    timestamp: new Date().toISOString(),
+                // Update project with deployment info (only if we have a valid package ID)
+                if (isValidPackageId) {
+                  console.log('📝 Updating project with deployment info...');
+                  const projectUpdateData = {
+                    package_id: packageId,
+                    module_address: packageId
+                  };
+
+                  console.log('📝 Project update data:', projectUpdateData);
+
+                  const { data: updateData, error: updateError } = await supabase
+                    .from('projects')
+                    .update(projectUpdateData)
+                    .eq('id', projectId)
+                    .select();
+
+                  if (updateError) {
+                    console.error('❌ Failed to update project:', updateError);
+                  } else {
+                    console.log('✅ Successfully updated project:', updateData);
                   }
-                };
-
-                console.log('📝 Project update data:', projectUpdateData);
-
-                const { data: updateData, error: updateError } = await supabase
-                  .from('projects')
-                  .update(projectUpdateData)
-                  .eq('id', projectId)
-                  .select();
-
-                if (updateError) {
-                  console.error('❌ Failed to update project:', updateError);
                 } else {
-                  console.log('✅ Successfully updated project:', updateData);
+                  console.log('⚠️ Skipping project update - no valid package ID');
                 }
 
               } catch (saveError) {
@@ -883,32 +907,35 @@ export function DeployDialogV2({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[900px] max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <RocketIcon className="h-5 w-5" />
-              Deploy Contract
+        <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader className="border-b pb-4">
+            <DialogTitle className="text-xl font-semibold flex items-center gap-2">
+              <RocketIcon className="h-5 w-5 text-primary" />
+              Deploy Smart Contract
             </DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Deploy your Move contract to the IOTA blockchain
+            </p>
           </DialogHeader>
 
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="flex-1">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="deploy" className="flex items-center gap-2">
-                <RocketIcon className="h-4 w-4" />
-                Deploy
-              </TabsTrigger>
-              <TabsTrigger value="simulate" className="flex items-center gap-2">
-                <Zap className="h-4 w-4" />
-                Simulate
-              </TabsTrigger>
-              <TabsTrigger value="bytecode" className="flex items-center gap-2">
-                <Code className="h-4 w-4" />
-                Bytecode
-              </TabsTrigger>
-            </TabsList>
+          <div className="flex-1 overflow-y-auto">
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="h-full">
+              <TabsList className="w-full grid grid-cols-3 mb-4">
+                <TabsTrigger value="deploy" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <RocketIcon className="h-4 w-4 mr-2" />
+                  Deploy
+                </TabsTrigger>
+                <TabsTrigger value="simulate" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Zap className="h-4 w-4 mr-2" />
+                  Simulate
+                </TabsTrigger>
+                <TabsTrigger value="bytecode" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Code className="h-4 w-4 mr-2" />
+                  Bytecode
+                </TabsTrigger>
+              </TabsList>
 
-            <div className="mt-4 space-y-4">
-              <TabsContent value="deploy" className="space-y-4">
+              <TabsContent value="deploy" className="space-y-4 p-1">
                 {/* Bytecode Inspection Panel */}
                 {lastCompilation?.success && bytecodeInfo && (
                   <Collapsible open={showBytecode} onOpenChange={setShowBytecode}>
@@ -1009,92 +1036,166 @@ export function DeployDialogV2({
                   </div>
                 )}
 
-                {/* Deployment Status Card */}
+                {/* Wallet Selection Card - Clean Design */}
                 <div className="space-y-4">
-                  {/* Wallet Type Selector */}
-                  <div className="flex items-center gap-4 p-3 rounded-lg border bg-card">
-                    <label className="text-sm font-medium">Wallet Type:</label>
-                    <Select value={selectedWalletType} onValueChange={(value: 'playground' | 'external') => handleWalletTypeChange(value)}>
-                      <SelectTrigger className="w-40">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="playground">Playground Wallet</SelectItem>
-                        <SelectItem value="external">External Wallet</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Wallet Status */}
-                  <div className="rounded-lg border bg-card">
-                    <div className="p-4">
+                  {/* Auto-detect wallet or show options */}
+                  {currentAccount ? (
+                    // External wallet is connected
+                    <div className="rounded-lg border bg-gradient-to-r from-primary/5 to-primary/10 p-4">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <Wallet className="h-4 w-4 text-primary" />
-                          <span className="font-medium">Wallet</span>
+                          <div className="p-2 rounded-full bg-primary/10">
+                            <Wallet className="h-4 w-4 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-medium">External Wallet Connected</p>
+                            <p className="text-xs text-muted-foreground">Ready to deploy</p>
+                          </div>
                         </div>
-                        {isWalletConnected ? (
-                          <Badge variant="secondary" className="bg-green-500/10 text-green-600 border-green-200">
-                            ✓ Connected
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-amber-600 border-amber-200">
-                            Not Connected
-                          </Badge>
-                        )}
+                        <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Connected
+                        </Badge>
                       </div>
                       
-                      {isWalletConnected ? (
-                        <div className="grid grid-cols-1 gap-3 text-sm">
-                          <div className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/50">
-                            <span className="text-muted-foreground font-medium">Type</span>
-                            <Badge variant="outline" className="font-mono text-xs">
-                              {selectedWalletType === 'playground' ? 'Playground Wallet' : 'External Wallet'}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/50">
-                            <span className="text-muted-foreground font-medium">Address</span>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-xs">
-                                {walletAddress?.slice(0, 8)}...{walletAddress?.slice(-6)}
-                              </span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() => copyToClipboard(walletAddress || '')}
-                              >
-                                <Copy className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/50">
-                            <span className="text-muted-foreground font-medium">Network</span>
-                            <Badge variant="default" className="capitalize">{network}</Badge>
+                      <div className="space-y-2 mt-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Address</span>
+                          <div className="flex items-center gap-1">
+                            <code className="text-xs bg-muted px-2 py-1 rounded">
+                              {currentAccount.address.slice(0, 8)}...{currentAccount.address.slice(-6)}
+                            </code>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => copyToClipboard(currentAccount.address)}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
                           </div>
                         </div>
-                      ) : (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Network</span>
+                          <Badge variant={network === 'mainnet' ? 'destructive' : 'secondary'}>
+                            {network}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    // No external wallet - show wallet options
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Playground Wallet Option */}
+                      <button
+                        onClick={() => handleWalletTypeChange('playground')}
+                        className={cn(
+                          "relative rounded-lg border-2 p-4 text-left transition-all hover:shadow-md",
+                          selectedWalletType === 'playground' 
+                            ? "border-primary bg-primary/5" 
+                            : "border-muted hover:border-muted-foreground/50"
+                        )}
+                      >
+                        {selectedWalletType === 'playground' && (
+                          <div className="absolute top-2 right-2">
+                            <CheckCircle className="h-4 w-4 text-primary" />
+                          </div>
+                        )}
                         <div className="space-y-2">
-                          <Button 
-                            variant="outline" 
-                            className="w-full"
-                            onClick={handleConnectWallet}
-                          >
-                            <Wallet className="mr-2 h-4 w-4" />
-                            {selectedWalletType === 'playground' ? 'Connect Playground' : 'Connect External Wallet'}
-                          </Button>
-                          {selectedWalletType === 'external' && (
-                            <p className="text-xs text-muted-foreground text-center">
-                              Install IOTA Wallet or compatible wallet extension to connect
+                          <div className="p-2 bg-primary/10 rounded-lg w-fit">
+                            <TestTube className="h-5 w-5 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-medium">Playground Wallet</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Deploy instantly with built-in testnet wallet
                             </p>
+                          </div>
+                          {network === 'mainnet' && (
+                            <Badge variant="outline" className="text-xs">
+                              Testnet only
+                            </Badge>
                           )}
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      </button>
 
-                  {/* Gas Estimation */}
-                  {lastCompilation?.success && publishData && (
+                      {/* External Wallet Option */}
+                      <button
+                        onClick={() => handleWalletTypeChange('external')}
+                        className={cn(
+                          "relative rounded-lg border-2 p-4 text-left transition-all hover:shadow-md",
+                          selectedWalletType === 'external' 
+                            ? "border-primary bg-primary/5" 
+                            : "border-muted hover:border-muted-foreground/50"
+                        )}
+                      >
+                        {selectedWalletType === 'external' && (
+                          <div className="absolute top-2 right-2">
+                            <CheckCircle className="h-4 w-4 text-primary" />
+                          </div>
+                        )}
+                        <div className="space-y-2">
+                          <div className="p-2 bg-secondary/50 rounded-lg w-fit">
+                            <Wallet className="h-5 w-5 text-secondary-foreground" />
+                          </div>
+                          <div>
+                            <p className="font-medium">External Wallet</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Connect your IOTA wallet for full control
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Connect Button if needed */}
+                  {!currentAccount && selectedWalletType === 'external' && (
+                    <Button 
+                      variant="default" 
+                      className="w-full"
+                      onClick={handleConnectWallet}
+                    >
+                      <Wallet className="mr-2 h-4 w-4" />
+                      Connect External Wallet
+                    </Button>
+                  )}
+
+                  {/* Playground wallet info */}
+                  {selectedWalletType === 'playground' && !currentAccount && (
+                    <div className="rounded-lg border bg-gradient-to-r from-primary/5 to-primary/10 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 rounded-full bg-primary/10">
+                            <TestTube className="h-4 w-4 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-medium">Playground Wallet</p>
+                            <p className="text-xs text-muted-foreground">Testnet deployment ready</p>
+                          </div>
+                        </div>
+                        <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Ready
+                        </Badge>
+                      </div>
+                      
+                      <div className="space-y-2 mt-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Type</span>
+                          <Badge variant="secondary">Built-in Testnet Wallet</Badge>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Network</span>
+                          <Badge variant="secondary">testnet</Badge>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Gas Estimation */}
+                {lastCompilation?.success && publishData && (
                     <div className="rounded-lg border bg-card">
                       <div className="p-4">
                         <div className="flex items-center gap-2 mb-3">
@@ -1127,7 +1228,6 @@ export function DeployDialogV2({
                       </div>
                     </div>
                   )}
-                </div>
 
                 {/* Deployment Result */}
                 {deploymentResult && deploymentResult.success && (
@@ -1676,8 +1776,8 @@ export function DeployDialogV2({
                   </div>
                 </Tabs>
               </TabsContent>
-            </div>
-          </Tabs>
+            </Tabs>
+          </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>

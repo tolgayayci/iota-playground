@@ -1,0 +1,6 @@
+{
+  "success": true,
+  "timestamp": "2025-08-22T11:03:48.922Z",
+  "compilation_time": 1939,
+  "code_snapshot": "module hello_world::greetings {\n    use std::string::{Self, String};\n    use iota::object::{Self, UID};\n    use iota::tx_context::{Self, TxContext};\n    use iota::transfer;\n    use iota::event;\n\n    /// A Greeting object that can be created and shared\n    public struct Greeting has key, store {\n        id: UID,\n        message: String,\n        creator: address,\n    }\n\n    /// Event emitted when a greeting is created\n    public struct GreetingCreated has copy, drop {\n        message: String,\n        creator: address,\n    }\n\n    /// Create a new greeting with a custom message\n    public entry fun create_greeting(\n        message: vector<u8>, \n        ctx: &mut TxContext\n    ) {\n        let greeting = Greeting {\n            id: object::new(ctx),\n            message: string::utf8(message),\n            creator: tx_context::sender(ctx),\n        };\n\n        // Emit an event to notify that a greeting was created\n        event::emit(GreetingCreated {\n            message: greeting.message,\n            creator: greeting.creator,\n        });\n\n        // Transfer the greeting object to the sender\n        transfer::public_transfer(greeting, tx_context::sender(ctx));\n    }\n}"
+}

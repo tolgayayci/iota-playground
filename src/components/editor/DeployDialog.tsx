@@ -210,7 +210,7 @@ export function DeployDialog({
                   <Button
                     variant="link"
                     className="h-8 px-0 text-purple-500"
-                    onClick={() => window.open('https://github.com/tolgayayci/wizard/issues/new?labels=bug&template=bug_report.md&title=[ABI]%20Contract%20ABI%20not%20found', '_blank')}
+                    onClick={() => window.open('https://github.com/iotaledger/iota-playground/issues/new?labels=bug&template=bug_report.md&title=[ABI]%20Contract%20ABI%20not%20found', '_blank')}
                   >
                     <span className="underline">Open Issue on GitHub</span>
                     <ExternalLink className="h-3.5 w-3.5 ml-1" />

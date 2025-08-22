@@ -75,20 +75,32 @@ router.post('/deploy', deployRateLimiter, async (req, res, next) => {
         
         logger.info(`Storing ABI with ${abiFunctions.length} functions for deployment`);
         
+        // Get playground wallet address for metadata
+        const playgroundInfo = await getPlaygroundWalletInfo();
+        
+        // Store deployer address in abi metadata
+        const abiWithMetadata = {
+          functions: abiFunctions,
+          deployerAddress: playgroundInfo.address
+        };
+        
+        // Save deployment data
+        let deploymentData: any = {
+          project_id: projectId,
+          user_id: userId,
+          package_id: result.packageId,
+          module_address: result.packageId,
+          module_name: 'playground_deployment',
+          network,
+          abi: abiWithMetadata, // Store abi with metadata
+          transaction_hash: result.transactionDigest || '',
+          gas_used: parseInt(result.gasUsed || '0'),
+        };
+
+        // Save deployment
         const { error: dbError } = await supabase
           .from('deployed_contracts')
-          .insert({
-            project_id: projectId,
-            user_id: userId,
-            package_id: result.packageId,
-            module_address: result.packageId,
-            module_name: 'playground_deployment',
-            network,
-            abi: abiFunctions, // Store functions array directly
-            transaction_hash: result.transactionDigest || '',
-            gas_used: parseInt(result.gasUsed || '0'),
-            wallet_type: 'playground'
-          });
+          .insert(deploymentData);
 
         if (dbError) {
           logger.error('Failed to save deployment to database:', dbError);
@@ -102,13 +114,7 @@ router.post('/deploy', deployRateLimiter, async (req, res, next) => {
           .from('projects')
           .update({
             package_id: result.packageId,
-            module_address: result.packageId,
-            last_deployment: {
-              packageId: result.packageId,
-              transactionDigest: result.transactionDigest,
-              network,
-              timestamp: new Date().toISOString(),
-            }
+            module_address: result.packageId
           })
           .eq('id', projectId);
       }
@@ -311,7 +317,7 @@ const saveExternalSchema = Joi.object({
   packageId: Joi.string().required(),
   transactionDigest: Joi.string().required(),
   network: Joi.string().valid('testnet', 'mainnet').default('testnet'),
-  abi: Joi.array().optional(),
+  abi: Joi.alternatives().try(Joi.array(), Joi.object()).optional(), // Accept array or object with metadata
   gasUsed: Joi.string().optional(),
   userId: Joi.string().required()
 });
@@ -361,10 +367,9 @@ router.post('/save-external', async (req, res, next) => {
           module_address: verifiedPackageId,
           module_name: 'external_deployment',
           network,
-          abi: abi || [],
+          abi: abi || [], // ABI will contain metadata including deployer address
           transaction_hash: transactionDigest,
-          gas_used: parseInt(gasUsed || '0'),
-          wallet_type: 'external'
+          gas_used: parseInt(gasUsed || '0')
         }, {
           onConflict: 'package_id,network',
           ignoreDuplicates: false
@@ -373,6 +378,8 @@ router.post('/save-external', async (req, res, next) => {
       if (dbError) {
         logger.error('Failed to save deployment:', dbError);
         throw new AppError('Failed to save deployment to database', 500);
+      } else {
+        logger.info(`Successfully saved deployment to database: ${verifiedPackageId}`);
       }
 
       // Update project
@@ -380,13 +387,7 @@ router.post('/save-external', async (req, res, next) => {
         .from('projects')
         .update({
           package_id: verifiedPackageId,
-          module_address: verifiedPackageId,
-          last_deployment: {
-            packageId: verifiedPackageId,
-            transactionDigest,
-            network,
-            timestamp: new Date().toISOString(),
-          }
+          module_address: verifiedPackageId
         })
         .eq('id', projectId);
 
@@ -410,17 +411,19 @@ router.post('/save-external', async (req, res, next) => {
           module_address: packageId,
           module_name: 'external_deployment',
           network,
-          abi: abi || [],
+          abi: abi || [], // ABI will contain metadata including deployer address
           transaction_hash: transactionDigest,
-          gas_used: parseInt(gasUsed || '0'),
-          wallet_type: 'external'
+          gas_used: parseInt(gasUsed || '0')
         }, {
           onConflict: 'package_id,network',
           ignoreDuplicates: false
         });
 
       if (dbError) {
+        logger.error('Failed to save deployment:', dbError);
         throw new AppError('Failed to save deployment', 500);
+      } else {
+        logger.info(`Successfully saved deployment to database: ${packageId}`);
       }
 
       res.json({

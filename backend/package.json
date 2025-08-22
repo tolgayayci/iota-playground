@@ -21,6 +21,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@iarna/toml": "^2.2.5",
     "@iota/iota-sdk": "^1.1.1",
     "@supabase/supabase-js": "^2.39.3",
     "cors": "^2.8.5",
@@ -40,7 +41,7 @@
     "@types/express": "^4.17.21",
     "@types/morgan": "^1.9.9",
     "@types/multer": "^1.4.11",
-    "@types/node": "^20.11.5",
+    "@types/node": "^20.19.11",
     "@types/uuid": "^9.0.7",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",

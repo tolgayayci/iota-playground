@@ -325,7 +325,7 @@ export function EditorPage() {
   // Handle share dialog close and refresh project data
 
   const handleReportIssue = () => {
-    window.open('https://github.com/tolgayayci/wizard/issues/new?labels=bug&template=bug_report.md', '_blank');
+    window.open('https://github.com/iotaledger/iota-playground/issues/new?labels=bug&template=bug_report.md', '_blank');
   };
 
   if (!project) {
@@ -502,6 +502,7 @@ export function EditorPage() {
                 onCompile={handleCompile}
                 isCompiling={isCompiling}
                 projectId={project.id}
+                projectName={project.name}
                 lastCompilation={lastCompilationResult}
                 onDeploySuccess={handleDeploySuccess}
                 onSave={handleSave}
@@ -533,6 +534,7 @@ export function EditorPage() {
               result={lastCompilationResult}
               isCompiling={isCompiling}
               projectId={project.id}
+              projectName={project.name}
             />
           </div>
         )}

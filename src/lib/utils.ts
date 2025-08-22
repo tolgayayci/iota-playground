@@ -50,7 +50,7 @@ export function getOSInfo() {
 // Format bug report URL with all necessary information
 export function formatBugReportUrl(userId: string, projectId: string, code: string) {
   const template = "bug_report.md";
-  const baseUrl = "https://github.com/tolgayayci/wizard/issues/new";
+  const baseUrl = "https://github.com/iotaledger/iota-playground/issues/new";
   
   const params = new URLSearchParams({
     template,

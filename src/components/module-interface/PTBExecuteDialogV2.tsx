@@ -179,18 +179,25 @@ export function PTBExecuteDialogV2({
       throw new Error(`Value is required for type ${type}`);
     }
     
-    const normalizedType = type.toLowerCase().replace(/\s+/g, '');
+    // Normalize type - only trim edges, don't remove all whitespace
+    const normalizedType = type.trim().toLowerCase();
     
-    // Handle references - always need object IDs
-    if (normalizedType.startsWith('&') || normalizedType.startsWith('0x')) {
-      // For object references, ensure we have a valid object ID
-      const objectId = normalizeObjectId(value);
-      return tx.object(objectId);
-    }
+    console.log(`🔧 Creating argument for type: ${type} (normalized: ${normalizedType}) with value: ${value}`);
     
-    // Handle struct types (custom objects)
-    if (normalizedType.includes('::')) {
+    // Handle references - types with & or &mut are references to objects
+    // This is the ONLY case where we use tx.object() for non-primitive types
+    if (normalizedType.includes('&')) {
+      console.log('📦 Detected reference type, creating object reference');
+      // Remove reference markers to get base type
+      const baseType = normalizedType.replace(/^&(mut\s+)?/, '');
+      console.log(`📦 Reference type: ${type} -> base type: ${baseType}`);
+      
+      // Validate object ID format (must be 66 chars: 0x + 64 hex)
       const objectId = normalizeObjectId(value);
+      if (!objectId.match(/^0x[0-9a-fA-F]{64}$/)) {
+        throw new Error(`Invalid object ID format for ${type}: ${value}. Expected 64-character hex string starting with 0x.`);
+      }
+      console.log(`📦 Using object ID: ${objectId}`);
       return tx.object(objectId);
     }
     
@@ -227,11 +234,11 @@ export function PTBExecuteDialogV2({
       }
     }
     
-    // Handle primitive types
+    // Handle primitive types with proper validation
     if (normalizedType === 'u8') {
       const num = parseInt(value);
       if (isNaN(num) || num < 0 || num > 255) {
-        throw new Error('u8 must be 0-255');
+        throw new Error(`Invalid u8 value: ${value}. Must be 0-255.`);
       }
       return tx.pure.u8(num);
     }
@@ -239,7 +246,7 @@ export function PTBExecuteDialogV2({
     if (normalizedType === 'u16') {
       const num = parseInt(value);
       if (isNaN(num) || num < 0 || num > 65535) {
-        throw new Error('u16 must be 0-65535');
+        throw new Error(`Invalid u16 value: ${value}. Must be 0-65535.`);
       }
       return tx.pure.u16(num);
     }
@@ -247,7 +254,7 @@ export function PTBExecuteDialogV2({
     if (normalizedType === 'u32') {
       const num = parseInt(value);
       if (isNaN(num) || num < 0 || num > 4294967295) {
-        throw new Error('u32 must be 0-4294967295');
+        throw new Error(`Invalid u32 value: ${value}. Must be 0-4294967295.`);
       }
       return tx.pure.u32(num);
     }
@@ -256,24 +263,38 @@ export function PTBExecuteDialogV2({
       try {
         const bigintValue = BigInt(value);
         if (bigintValue < 0n || bigintValue > 18446744073709551615n) {
-          throw new Error('u64 out of range');
+          throw new Error(`Invalid u64 value: ${value}. Must be 0-18446744073709551615.`);
         }
-        // Use string to prevent precision loss
+        // Pass as string to prevent precision loss - IOTA SDK requirement
         return tx.pure.u64(value);
-      } catch {
-        throw new Error('Invalid u64 value');
+      } catch (e) {
+        throw new Error(`Invalid u64 value: ${value}. Must be a valid integer.`);
       }
     }
     
-    if (normalizedType === 'u128' || normalizedType === 'u256') {
+    if (normalizedType === 'u128') {
       try {
         const bigintValue = BigInt(value);
         if (bigintValue < 0n) {
-          throw new Error(`${normalizedType} must be positive`);
+          throw new Error(`Invalid u128 value: ${value}. Must be non-negative.`);
         }
-        return tx.pure[normalizedType](value);
-      } catch {
-        throw new Error(`Invalid ${normalizedType} value`);
+        // Pass as string for large numbers - IOTA SDK requirement
+        return tx.pure.u128(value);
+      } catch (e) {
+        throw new Error(`Invalid u128 value: ${value}. Must be a valid integer.`);
+      }
+    }
+    
+    if (normalizedType === 'u256') {
+      try {
+        const bigintValue = BigInt(value);
+        if (bigintValue < 0n) {
+          throw new Error(`Invalid u256 value: ${value}. Must be non-negative.`);
+        }
+        // Pass as string for large numbers - IOTA SDK requirement
+        return tx.pure.u256(value);
+      } catch (e) {
+        throw new Error(`Invalid u256 value: ${value}. Must be a valid integer.`);
       }
     }
     
@@ -283,11 +304,11 @@ export function PTBExecuteDialogV2({
     }
     
     if (normalizedType === 'address' || normalizedType === 'signer') {
-      const address = value.startsWith('0x') ? value : `0x${value}`;
-      if (address.length !== 66) {
-        throw new Error('Address must be 64 hex characters');
+      // Validate address format - must be hex string with 0x prefix
+      if (!value.match(/^0x[0-9a-fA-F]+$/)) {
+        throw new Error(`Invalid address format: ${value}. Must be hex string starting with 0x.`);
       }
-      return tx.pure.address(address);
+      return tx.pure.address(value);
     }
     
     // Default to string
@@ -492,183 +513,54 @@ export function PTBExecuteDialogV2({
           });
         }
       } else {
-        // View function - use devInspect
-        const client = new IotaClient({ url: getFullnodeUrl(network) });
+        // View function - use backend endpoint
+        console.log('🔄 Executing view function through backend');
         
-        // For view functions, we need to determine the appropriate sender
-        // If the function accesses owned objects, we need to use the owner's address
-        let inspectSender = '0x0000000000000000000000000000000000000000000000000000000000000000';
+        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
         
-        // Check if any parameters are object references that might be owned
-        const hasOwnedObjects = parameters.some(param => {
-          const type = param.type.toLowerCase();
-          return type.startsWith('&') && inputs[param.name];
+        // Prepare function arguments with type information
+        const functionArgs = parameters.map(param => ({
+          value: inputs[param.name] || '',
+          type: param.type
+        }));
+        
+        // Optional: get current account address as sender if available
+        const sender = currentAccount?.address;
+        
+        console.log('📞 Calling backend view function:', {
+          functionTarget,
+          functionArgs,
+          network,
+          sender
         });
         
-        if (hasOwnedObjects) {
-          // Try to get the owner of the first object reference
-          for (const param of parameters) {
-            if (param.type.toLowerCase().startsWith('&') && inputs[param.name]) {
-              try {
-                const objectId = normalizeObjectId(inputs[param.name]);
-                const objectInfo = await client.getObject({
-                  id: objectId,
-                  options: { showOwner: true }
-                });
-                
-                if (objectInfo.data?.owner) {
-                  if (typeof objectInfo.data.owner === 'object' && 'AddressOwner' in objectInfo.data.owner) {
-                    inspectSender = objectInfo.data.owner.AddressOwner;
-                    console.log('Using object owner as sender for devInspect:', inspectSender);
-                    break;
-                  } else if (typeof objectInfo.data.owner === 'object' && 'ObjectOwner' in objectInfo.data.owner) {
-                    // For ObjectOwner, we need to find the ultimate owner
-                    // For now, use current account if available
-                    if (currentAccount?.address) {
-                      inspectSender = currentAccount.address;
-                      console.log('Object owned by another object, using current account:', inspectSender);
-                    }
-                    break;
-                  } else if (typeof objectInfo.data.owner === 'string') {
-                    inspectSender = objectInfo.data.owner;
-                    console.log('Using object owner as sender for devInspect:', inspectSender);
-                    break;
-                  }
-                }
-              } catch (error) {
-                console.warn('Could not fetch object owner:', error);
-                // If we can't fetch the owner but have a current account, use it
-                if (currentAccount?.address) {
-                  inspectSender = currentAccount.address;
-                  console.log('Using current account as fallback:', inspectSender);
-                }
-              }
-            }
-          }
-        }
-        
-        // If still using zero address and we have a current account, use it
-        if (inspectSender === '0x0000000000000000000000000000000000000000000000000000000000000000' && currentAccount?.address) {
-          inspectSender = currentAccount.address;
-          console.log('Using current account as default sender:', inspectSender);
-        }
-        
-        // Build transaction with proper ordering
-        const tx = new Transaction();
-        
-        // Build transaction arguments first
-        const transactionArgs: any[] = [];
-        for (const param of parameters) {
-          const value = inputs[param.name] || '';
-          try {
-            const arg = createTransactionArgument(value, param.type, tx);
-            transactionArgs.push(arg);
-          } catch (error) {
-            console.error(`Error creating argument for ${param.name}:`, error);
-            throw new Error(`Invalid value for parameter ${param.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-          }
-        }
-        
-        // Now add the move call with the arguments
-        const moveCallResult = tx.moveCall({
-          target: functionTarget,
-          arguments: transactionArgs,
+        const response = await fetch(`${API_URL}/v2/ptb/view`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            functionTarget,
+            functionArgs,
+            network,
+            sender,
+          }),
         });
         
-        // Set the sender after building the transaction structure
-        tx.setSender(inspectSender);
-        
-        // Execute devInspect
-        let devInspectResult;
-        try {
-          devInspectResult = await client.devInspectTransactionBlock({
-            transactionBlock: await tx.build({ client }),
-            sender: inspectSender,
-          });
-        } catch (error) {
-          console.error('devInspect failed:', error);
-          
-          // If it fails with current approach, try with zero address as last resort
-          if (inspectSender !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
-            console.log('Retrying with zero address');
-            
-            const tx2 = new Transaction();
-            const zeroAddress = '0x0000000000000000000000000000000000000000000000000000000000000000';
-            
-            // Build arguments first
-            const transactionArgs2: any[] = [];
-            for (const param of parameters) {
-              const value = inputs[param.name] || '';
-              const arg = createTransactionArgument(value, param.type, tx2);
-              transactionArgs2.push(arg);
-            }
-            
-            // Add move call
-            tx2.moveCall({
-              target: functionTarget,
-              arguments: transactionArgs2,
-            });
-            
-            // Set sender after building
-            tx2.setSender(zeroAddress);
-            
-            try {
-              devInspectResult = await client.devInspectTransactionBlock({
-                transactionBlock: await tx2.build({ client }),
-                sender: zeroAddress,
-              });
-            } catch (secondError) {
-              // Both attempts failed, throw the original error
-              throw error;
-            }
-          } else {
-            throw error;
-          }
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'View function execution failed');
         }
         
-        if (devInspectResult.effects?.status?.status === 'success') {
-          const rawOutputs = devInspectResult.results?.[0]?.returnValues || [];
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+          const { returnValues, gasUsed } = result.data;
           
-          // Process and format the return values
+          // Format return values for display
           const outputs = [];
-          if (rawOutputs.length > 0) {
-            const formattedValues = rawOutputs.map((value: any, index: number) => {
-              if (Array.isArray(value) && value.length === 2) {
-                const [data, type] = value;
-                
-                // Try to decode based on type
-                if (type && data) {
-                  try {
-                    // For number types, decode the bytes
-                    if (['u8', 'u16', 'u32', 'u64', 'u128', 'u256'].includes(type)) {
-                      const bytes = new Uint8Array(data);
-                      let num = BigInt(0);
-                      for (let i = 0; i < bytes.length; i++) {
-                        num = num | (BigInt(bytes[i]) << BigInt(i * 8));
-                      }
-                      return `${num.toString()} (${type})`;
-                    }
-                    
-                    // For bool
-                    if (type === 'bool') {
-                      return `${data[0] === 1} (bool)`;
-                    }
-                    
-                    // For address
-                    if (type === 'address') {
-                      const hex = '0x' + Array.from(data, (byte: any) => 
-                        byte.toString(16).padStart(2, '0')
-                      ).join('');
-                      return `${hex} (address)`;
-                    }
-                    
-                    // Default: show raw data
-                    return `[${data.join(', ')}] (${type})`;
-                  } catch (e) {
-                    console.error('Error decoding value:', e);
-                    return `[${data.join(', ')}] (${type})`;
-                  }
-                }
+          if (returnValues && returnValues.length > 0) {
+            const formattedValues = returnValues.map((value: any) => {
+              if (value.type && value.value !== undefined) {
+                return `${value.value} (${value.type})`;
               }
               return JSON.stringify(value);
             });
@@ -687,6 +579,7 @@ export function PTBExecuteDialogV2({
               label: 'Result',
               data: 'Function executed successfully (no return values)'
             }],
+            gasUsed: gasUsed || '0',
           };
           
           setResult(successResult);
@@ -698,7 +591,7 @@ export function PTBExecuteDialogV2({
             description: "View function executed successfully",
           });
         } else {
-          throw new Error(devInspectResult.effects?.status?.error || 'Execution failed');
+          throw new Error(result.message || 'View function execution failed');
         }
       }
     } catch (error) {

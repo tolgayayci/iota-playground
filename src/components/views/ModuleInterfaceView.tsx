@@ -11,7 +11,7 @@ import { PTBExecuteDialogV2 as PTBExecuteDialog } from '@/components/module-inte
 import { ModuleExecutionHistory } from '@/components/module-interface/ModuleExecutionHistory';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
-import { History, PlayCircle, Package, RefreshCw, AlertCircle } from 'lucide-react';
+import { History, PlayCircle, Package, RefreshCw, AlertCircle, Wallet, Globe, User, ExternalLink } from 'lucide-react';
 import { fetchModuleInterface, verifyPackageExists, clearModuleInterfaceCache, MODULE_INTERFACE_VERSION } from '@/lib/moduleInterface';
 
 interface ModuleInterfaceViewProps {
@@ -30,6 +30,11 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
   const [moduleInterface, setModuleInterface] = useState<ModuleInterfaceData | null>(null);
   const [selectedModule, setSelectedModule] = useState<string>('');
   const [isFetchingInterface, setIsFetchingInterface] = useState(false);
+  const [deploymentMetadata, setDeploymentMetadata] = useState<{
+    walletType?: 'playground' | 'external';
+    deployerAddress?: string;
+    network?: string;
+  }>({});
   const { toast } = useToast();
 
   const fetchRealModuleInterface = async (packageId: string, network: 'testnet' | 'mainnet' = 'testnet') => {
@@ -37,9 +42,20 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
       setIsFetchingInterface(true);
       setError(null);
       
-      // Validate package ID format
-      if (!packageId || packageId === 'unknown' || packageId.length < 10 || packageId.startsWith('tx_')) {
-        throw new Error('Package deployment is still being processed. Please check the transaction in explorer.');
+      // Validate package ID format (must be 0x + 64 hex chars = 66 total)
+      const isValidPackageId = packageId && 
+                                packageId.startsWith('0x') && 
+                                packageId.length === 66 &&
+                                /^0x[a-f0-9]{64}$/i.test(packageId);
+      
+      if (!isValidPackageId) {
+        if (packageId?.startsWith('tx_')) {
+          throw new Error('Package deployment is still being processed. Please check the transaction in explorer.');
+        } else if (packageId === 'unknown') {
+          throw new Error('Package ID could not be determined. Please check the transaction in explorer.');
+        } else {
+          throw new Error(`Invalid package ID format: ${packageId?.slice(0, 20)}...`);
+        }
       }
       
       // Clear cache for this package to get fresh data
@@ -102,22 +118,42 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
     try {
       console.log('🔄 Fetching deployments for project:', projectId);
       setIsLoading(true);
-      const { data, error } = await supabase
+      
+      // Fetch deployments
+      const deploymentsResponse = await supabase
         .from('deployed_contracts')
         .select('*')
         .eq('project_id', projectId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (deploymentsResponse.error) throw deploymentsResponse.error;
 
-      console.log('📊 Deployments fetched:', data);
-      setDeployments(data || []);
+      console.log('📊 Deployments fetched:', deploymentsResponse.data);
+      setDeployments(deploymentsResponse.data || []);
       
       // Select the most recent deployment by default
-      if (data && data.length > 0) {
-        const mostRecent = data[0];
+      if (deploymentsResponse.data && deploymentsResponse.data.length > 0) {
+        const mostRecent = deploymentsResponse.data[0];
         console.log('📦 Most recent deployment:', mostRecent);
         setSelectedDeployment(mostRecent);
+        
+        // Determine wallet type from module_name field
+        const walletType = mostRecent.module_name === 'playground_deployment' ? 'playground' : 'external';
+        
+        // Extract deployer address from abi metadata if available
+        let deployerAddress = null;
+        if (mostRecent.abi && typeof mostRecent.abi === 'object') {
+          if ('deployerAddress' in mostRecent.abi) {
+            deployerAddress = (mostRecent.abi as any).deployerAddress;
+          }
+        }
+        
+        setDeploymentMetadata({
+          walletType: walletType,
+          deployerAddress: deployerAddress,
+          network: mostRecent.network || 'testnet'
+        });
+        
         // Fetch real module interface from blockchain
         console.log(`🌐 Fetching interface for package: ${mostRecent.package_id} on ${mostRecent.network || 'testnet'}`);
         await fetchRealModuleInterface(mostRecent.package_id, mostRecent.network || 'testnet');
@@ -125,6 +161,7 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
         console.log('⚠️ No deployments found for project');
         setSelectedDeployment(null);
         setModuleInterface(null);
+        setDeploymentMetadata({});
       }
     } catch (error) {
       console.error('❌ Error fetching deployments:', error);
@@ -173,6 +210,23 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
     }
 
     setSelectedDeployment(deployment);
+    
+    // Determine wallet type from module_name field
+    const walletType = deployment.module_name === 'playground_deployment' ? 'playground' : 'external';
+    
+    // Extract deployer address from abi metadata if available
+    let deployerAddress = null;
+    if (deployment.abi && typeof deployment.abi === 'object') {
+      if ('deployerAddress' in deployment.abi) {
+        deployerAddress = (deployment.abi as any).deployerAddress;
+      }
+    }
+    
+    setDeploymentMetadata({
+      walletType: walletType,
+      deployerAddress: deployerAddress,
+      network: deployment.network || 'testnet'
+    });
 
     // Fetch real module interface from blockchain
     await fetchRealModuleInterface(packageId, deployment.network || 'testnet');
@@ -253,6 +307,56 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
             deployments={deployments}
             isLoading={isLoading}
           />
+          
+          {/* Deployment Badges */}
+          {selectedDeployment && (
+            <div className="px-4 py-3 border-b bg-muted/20 flex items-center gap-2 flex-wrap">
+              {/* Wallet Type Badge */}
+              <Badge variant={deploymentMetadata.walletType === 'playground' ? 'default' : 'secondary'} className="gap-1">
+                <Wallet className="h-3 w-3" />
+                {deploymentMetadata.walletType === 'playground' ? 'Playground Wallet' : 'External Wallet'}
+              </Badge>
+              
+              {/* Network Badge */}
+              <Badge variant={selectedDeployment.network === 'mainnet' ? 'destructive' : 'outline'} className="gap-1">
+                <Globe className="h-3 w-3" />
+                {selectedDeployment.network || 'testnet'}
+              </Badge>
+              
+              {/* Deployer Address Badge - Clickable */}
+              {deploymentMetadata.deployerAddress && (
+                <Badge 
+                  variant="outline" 
+                  className="gap-1 cursor-pointer hover:bg-muted transition-colors"
+                  onClick={() => {
+                    const explorerUrl = `https://explorer.iota.org/address/${deploymentMetadata.deployerAddress}?network=${selectedDeployment.network || 'testnet'}`;
+                    window.open(explorerUrl, '_blank');
+                  }}
+                >
+                  <User className="h-3 w-3" />
+                  Deployer: {deploymentMetadata.deployerAddress.slice(0, 6)}...{deploymentMetadata.deployerAddress.slice(-4)}
+                  <ExternalLink className="h-3 w-3 ml-1" />
+                </Badge>
+              )}
+              
+              {/* Package ID Badge - Clickable */}
+              {selectedDeployment.package_id && (
+                <Badge 
+                  variant="outline" 
+                  className="gap-1 cursor-pointer hover:bg-muted transition-colors"
+                  onClick={() => {
+                    const explorerUrl = `https://explorer.iota.org/object/${selectedDeployment.package_id}?network=${selectedDeployment.network || 'testnet'}`;
+                    window.open(explorerUrl, '_blank');
+                  }}
+                >
+                  <Package className="h-3 w-3" />
+                  Package: {selectedDeployment.package_id.slice(0, 6)}...{selectedDeployment.package_id.slice(-4)}
+                  <ExternalLink className="h-3 w-3 ml-1" />
+                </Badge>
+              )}
+            </div>
+          )}
+          
           {selectedDeployment ? (
             <>
               {/* Module Interface Display */}
@@ -309,14 +413,14 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
                           );
                         }
 
-                        const hasContent = currentModule.functions.length > 0 || currentModule.structs.length > 0;
+                        const hasContent = currentModule.functions.length > 0;
                         
                         if (!hasContent) {
                           return (
                             <div className="p-8 text-center">
-                              <div className="text-muted-foreground mb-2">No public interface</div>
+                              <div className="text-muted-foreground mb-2">No public functions</div>
                               <div className="text-sm text-muted-foreground">
-                                This module doesn't expose any public functions or structs.
+                                This module doesn't expose any public functions.
                               </div>
                             </div>
                           );
@@ -340,46 +444,6 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
                                       isPackageVerified={isPackageVerified}
                                       isSharedView={isSharedView}
                                     />
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            
-                            {/* Structs Section */}
-                            {currentModule.structs.length > 0 && (
-                              <div>
-                                <h4 className="text-sm font-medium text-muted-foreground mb-3 px-1 flex items-center gap-2">
-                                  <Package className="h-4 w-4" />
-                                  Structs ({currentModule.structs.length})
-                                </h4>
-                                <div className="space-y-2">
-                                  {currentModule.structs.map((struct, index) => (
-                                    <div key={`${currentModule.name}-${struct.name}-${index}`} className="border rounded-lg p-3">
-                                      <div className="flex items-center gap-2 mb-2">
-                                        <span className="font-mono text-sm font-medium">{struct.name}</span>
-                                        {struct.abilities && struct.abilities.length > 0 && (
-                                          <div className="flex gap-1">
-                                            {struct.abilities.map((ability) => (
-                                              <Badge key={ability} variant="outline" className="text-xs">
-                                                {ability}
-                                              </Badge>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                      {struct.fields.length > 0 ? (
-                                        <div className="space-y-1 text-xs">
-                                          {struct.fields.map((field) => (
-                                            <div key={field.name} className="flex items-center gap-2 text-muted-foreground font-mono">
-                                              <span>{field.name}:</span>
-                                              <span className="text-foreground">{field.type}</span>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <div className="text-xs text-muted-foreground">No fields</div>
-                                      )}
-                                    </div>
                                   ))}
                                 </div>
                               </div>

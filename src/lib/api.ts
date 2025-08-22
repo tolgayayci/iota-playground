@@ -63,6 +63,46 @@ interface CompileResponse {
 }
 
 /**
+ * Generic API request function
+ */
+export async function apiRequest(
+  endpoint: string,
+  options?: {
+    method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+    body?: string;
+    headers?: Record<string, string>;
+  }
+): Promise<any> {
+  const { method = 'GET', body, headers = {} } = options || {};
+  
+  try {
+    const config: any = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers
+      }
+    };
+    
+    if (body) {
+      config.data = JSON.parse(body);
+    }
+    
+    const response = await api.request({
+      url: endpoint,
+      ...config
+    });
+    
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.data) {
+      throw new Error(error.response.data.error?.message || 'API request failed');
+    }
+    throw error;
+  }
+}
+
+/**
  * Compile a Move smart contract
  */
 export async function compileContract(

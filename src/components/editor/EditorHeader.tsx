@@ -1,25 +1,29 @@
 import { Button } from '@/components/ui/button';
-import { PlayIcon, RocketIcon, Loader2, Save, Code2 } from 'lucide-react';
+import { PlayIcon, RocketIcon, Loader2, Save, Code2, FileCode } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface EditorHeaderProps {
   onCompile: () => void;
   onDeploy: () => void;
   onSave: () => void;
+  onEditMoveToml?: () => void;
   isCompiling: boolean;
   isSaving: boolean;
   hasSuccessfulCompilation?: boolean;
   isSharedView?: boolean;
+  projectId?: string;
 }
 
 export function EditorHeader({ 
   onCompile, 
   onDeploy, 
   onSave,
+  onEditMoveToml,
   isCompiling,
   isSaving,
   hasSuccessfulCompilation = false,
   isSharedView = false,
+  projectId,
 }: EditorHeaderProps) {
   return (
     <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/40">
@@ -38,6 +42,20 @@ export function EditorHeader({
 
       {/* Right side - Actions */}
       <div className="flex items-center gap-2">
+        {onEditMoveToml && projectId && !isSharedView && (
+          <Button
+            onClick={onEditMoveToml}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            title="Edit Move.toml configuration"
+          >
+            <FileCode className="h-4 w-4" />
+            Move.toml
+          </Button>
+        )}
+        
+        <div className="h-6 w-px bg-border" />
         <Button
           onClick={onSave}
           disabled={isSaving || isSharedView}

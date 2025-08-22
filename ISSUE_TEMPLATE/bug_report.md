@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Create a report to help us improve Wizard IDE
+about: Create a report to help us improve IOTA Playground
 title: "[BUG] "
 labels: bug
 assignees: ''

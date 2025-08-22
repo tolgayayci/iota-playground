@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import MonacoEditor from "@monaco-editor/react";
 import { EditorHeader } from './editor/EditorHeader';
 import { DeployDialogV2 } from './editor/DeployDialogV2';
+import { MoveTomlEditor } from './editor/MoveTomlEditor';
 import { useTheme } from 'next-themes';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
@@ -21,6 +22,7 @@ interface EditorProps {
   isCompiling?: boolean;
   readOnly?: boolean;
   projectId?: string;
+  projectName?: string;
   lastCompilation?: CompilationResult | null;
   onDeploySuccess?: () => void;
   onSave?: () => void;
@@ -34,6 +36,7 @@ export function Editor({
   isCompiling,
   readOnly = false,
   projectId,
+  projectName,
   lastCompilation,
   onDeploySuccess,
   onSave,
@@ -42,6 +45,7 @@ export function Editor({
   const [isSaving, setIsSaving] = useState(false);
   const [showDeployDialog, setShowDeployDialog] = useState(false);
   const [showABIError, setShowABIError] = useState(false);
+  const [showMoveTomlEditor, setShowMoveTomlEditor] = useState(false);
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
   const { theme, systemTheme } = useTheme();
@@ -158,10 +162,12 @@ export function Editor({
         onCompile={onCompile || (() => {})}
         onDeploy={handleDeployClick}
         onSave={handleSave}
+        onEditMoveToml={() => setShowMoveTomlEditor(true)}
         isCompiling={isCompiling || false}
         isSaving={isSaving}
         hasSuccessfulCompilation={lastCompilation?.success}
         isSharedView={isSharedView}
+        projectId={projectId}
       />
       <div className="flex-1 min-h-0 relative">
         <MonacoEditor
@@ -196,13 +202,21 @@ export function Editor({
         />
       </div>
       {projectId && !isSharedView && (
-        <DeployDialogV2
+        <>
+          <MoveTomlEditor
+            isOpen={showMoveTomlEditor}
+            onClose={() => setShowMoveTomlEditor(false)}
+            projectId={projectId}
+            projectName={projectName}
+          />
+          <DeployDialogV2
           open={showDeployDialog}
           onOpenChange={setShowDeployDialog}
           projectId={projectId}
           lastCompilation={lastCompilation}
           onDeploySuccess={handleDeploySuccess}
         />
+        </>
       )}
     </div>
   );

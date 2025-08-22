@@ -12,6 +12,7 @@ interface CompilerViewProps {
   result?: CompilationResult | null;
   isCompiling?: boolean;
   projectId?: string;
+  projectName?: string;
   isSharedView?: boolean;
 }
 
@@ -19,6 +20,7 @@ export function CompilerView({
   result, 
   isCompiling, 
   projectId,
+  projectName,
   isSharedView = false,
 }: CompilerViewProps) {
   const [copiedStdout, setCopiedStdout] = useState(false);

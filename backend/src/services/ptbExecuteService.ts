@@ -139,6 +139,13 @@ export interface PTBExecutionResult {
   objectChanges?: any[];
 }
 
+export interface ViewFunctionResult {
+  success: boolean;
+  returnValues?: any[];
+  error?: string;
+  gasUsed?: string;
+}
+
 type FunctionArg = string | { value: string; type: string };
 
 export async function executePlaygroundWalletPTB(
@@ -252,6 +259,218 @@ export async function executePlaygroundWalletPTBWithSDK(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'SDK execution failed',
+    };
+  }
+}
+
+// Execute view function using devInspectTransactionBlock
+export async function executeViewFunction(
+  functionTarget: string,
+  functionArgs: FunctionArg[],
+  network: 'testnet' | 'mainnet' = 'testnet',
+  sender?: string
+): Promise<ViewFunctionResult> {
+  try {
+    const { Transaction } = await import('@iota/iota-sdk/transactions');
+    const { IotaClient, getFullnodeUrl } = await import('@iota/iota-sdk/client');
+    
+    logger.info(`Executing view function: ${functionTarget}`);
+    logger.info(`Network: ${network}`);
+    logger.info(`Sender: ${sender || 'will determine from objects'}`);
+    
+    // Initialize client
+    const client = new IotaClient({ url: getFullnodeUrl(network) });
+    
+    // Create transaction
+    const tx = new Transaction();
+    
+    // Determine sender address
+    let inspectSender = sender || '0x0000000000000000000000000000000000000000000000000000000000000000';
+    
+    // If no sender provided but we have object references, try to get owner
+    if (!sender && functionArgs.length > 0) {
+      for (const arg of functionArgs) {
+        const argValue = typeof arg === 'string' ? arg : arg.value;
+        const argType = typeof arg === 'string' ? '' : arg.type;
+        
+        // Check if this is an object reference
+        if (argType.toLowerCase().startsWith('&') || argValue.match(/^0x[0-9a-fA-F]{64}$/)) {
+          try {
+            logger.info(`Checking owner of object: ${argValue}`);
+            const objectInfo = await client.getObject({
+              id: argValue,
+              options: { showOwner: true }
+            });
+            
+            if (objectInfo.data?.owner) {
+              if (typeof objectInfo.data.owner === 'object' && 'AddressOwner' in objectInfo.data.owner) {
+                inspectSender = objectInfo.data.owner.AddressOwner;
+                logger.info(`Using object owner as sender: ${inspectSender}`);
+                break;
+              }
+            }
+          } catch (e) {
+            logger.warn(`Could not fetch object info for ${argValue}:`, e);
+          }
+        }
+      }
+    }
+    
+    // Set sender BEFORE building arguments - critical for proper serialization
+    tx.setSender(inspectSender);
+    logger.info(`Set transaction sender to: ${inspectSender}`);
+    
+    // Convert arguments to proper Transaction arguments
+    const txArgs = functionArgs.map((arg, index) => {
+      logger.info(`Processing argument ${index}: ${JSON.stringify(arg)}`);
+      
+      if (typeof arg === 'string') {
+        return parseLegacyArgument(tx, arg);
+      }
+      
+      const { value, type } = arg;
+      return parseTypedArgument(tx, value, type);
+    });
+    
+    logger.info(`Built ${txArgs.length} transaction arguments`);
+    
+    // Add the move call
+    tx.moveCall({
+      target: functionTarget,
+      arguments: txArgs,
+    });
+    
+    logger.info('Added moveCall to transaction, building transaction block...');
+    
+    // Build the transaction
+    const transactionBlock = await tx.build({ client });
+    
+    logger.info('Executing devInspectTransactionBlock...');
+    
+    // Execute devInspect
+    const result = await client.devInspectTransactionBlock({
+      transactionBlock,
+      sender: inspectSender,
+    });
+    
+    logger.info('devInspect result:', JSON.stringify(result, null, 2));
+    
+    if (result.effects?.status?.status === 'success') {
+      // Extract return values
+      const returnValues = result.results?.[0]?.returnValues || [];
+      
+      // Process and decode return values
+      const decodedValues = returnValues.map((value: any) => {
+        if (Array.isArray(value) && value.length === 2) {
+          const [data, type] = value;
+          
+          if (type && data) {
+            try {
+              // For number types, decode the bytes
+              if (['u8', 'u16', 'u32', 'u64', 'u128', 'u256'].includes(type)) {
+                const bytes = new Uint8Array(data);
+                let num = BigInt(0);
+                // Little-endian byte order
+                for (let i = 0; i < bytes.length; i++) {
+                  num = num | (BigInt(bytes[i]) << BigInt(i * 8));
+                }
+                return {
+                  value: num.toString(),
+                  type: type,
+                  raw: data
+                };
+              }
+              
+              // For bool
+              if (type === 'bool') {
+                return {
+                  value: data[0] === 1,
+                  type: 'bool',
+                  raw: data
+                };
+              }
+              
+              // For address
+              if (type === 'address') {
+                const hex = '0x' + Array.from(data, (byte: any) => 
+                  byte.toString(16).padStart(2, '0')
+                ).join('');
+                return {
+                  value: hex,
+                  type: 'address',
+                  raw: data
+                };
+              }
+              
+              // Default: return raw data
+              return {
+                value: data,
+                type: type,
+                raw: data
+              };
+            } catch (e) {
+              logger.error('Error decoding value:', e);
+              return {
+                value: data,
+                type: type,
+                error: e instanceof Error ? e.message : 'Decoding error'
+              };
+            }
+          }
+        }
+        return value;
+      });
+      
+      logger.info(`View function executed successfully, ${decodedValues.length} return values`);
+      
+      return {
+        success: true,
+        returnValues: decodedValues,
+        gasUsed: result.effects?.gasUsed?.computationCost || '0',
+      };
+    } else {
+      const errorMsg = result.effects?.status?.error || 'View function execution failed';
+      logger.error('View function failed:', errorMsg);
+      return {
+        success: false,
+        error: errorMsg,
+      };
+    }
+    
+  } catch (error) {
+    logger.error('View function execution error:', error);
+    logger.error('Error stack:', error instanceof Error ? error.stack : error);
+    
+    // Check for specific error patterns
+    if (error instanceof Error) {
+      if (error.message.includes('Deserialization error')) {
+        // Try alternative approach with playground wallet
+        logger.info('Deserialization error detected, trying with playground wallet address...');
+        
+        try {
+          const { getPlaygroundPrivateKey } = await import('../config/wallet');
+          const privateKey = getPlaygroundPrivateKey();
+          
+          if (privateKey) {
+            const { Ed25519Keypair } = await import('@iota/iota-sdk/keypairs/ed25519');
+            const keypair = Ed25519Keypair.fromSecretKey(privateKey);
+            const playgroundAddress = keypair.toIotaAddress();
+            
+            // Retry with playground wallet address if not already tried
+            if (sender !== playgroundAddress) {
+              logger.info(`Retrying with playground wallet address: ${playgroundAddress}`);
+              return await executeViewFunction(functionTarget, functionArgs, network, playgroundAddress);
+            }
+          }
+        } catch (retryError) {
+          logger.error('Retry with playground wallet failed:', retryError);
+        }
+      }
+    }
+    
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'View function execution failed',
     };
   }
 }
