@@ -1,0 +1,6 @@
+{
+  "success": true,
+  "timestamp": "2025-08-18T17:39:32.224Z",
+  "compilation_time": 1411,
+  "code_snapshot": "module 0x1::test {\n    public fun hello(): u64 {\n        42\n    }\n}"
+}

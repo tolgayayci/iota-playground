@@ -1,0 +1,6 @@
+{
+  "success": true,
+  "timestamp": "2025-08-20T11:30:31.713Z",
+  "compilation_time": 1990,
+  "code_snapshot": "module hello_world::greetings {\n    use std::string::{Self, String};\n    use iota::event;\n    use iota::tx_context::{Self, TxContext};\n\n    public struct GreetingEvent has copy, drop {\n        message: String,\n        greeter: address,\n    }\n\n    public fun greet(ctx: &mut TxContext): String {\n        let greeting = string::utf8(b\"Hello, IOTA World!\");\n        \n        event::emit(GreetingEvent {\n            message: greeting,\n            greeter: tx_context::sender(ctx)\n        });\n        \n        greeting\n    }\n}"
+}

@@ -1,0 +1,6 @@
+{
+  "success": true,
+  "timestamp": "2025-08-17T17:34:25.821Z",
+  "compilation_time": 345,
+  "code_snapshot": "module counter::counter {\n    use iota::object::{Self, UID};\n    use iota::tx_context::{Self, TxContext};\n    use iota::transfer;\n\n    public struct Counter has key, store {\n        id: UID,\n        value: u64,\n    }\n\n    public fun create_counter(ctx: &mut TxContext) {\n        let counter = Counter {\n            id: object::new(ctx),\n            value: 0,\n        };\n        transfer::public_transfer(counter, tx_context::sender(ctx));\n    }\n\n    public fun increment(counter: &mut Counter) {\n        counter.value = counter.value + 1;\n    }\n\n    public fun get_value(counter: &Counter): u64 {\n        counter.value\n    }\n}"
+}

@@ -1,0 +1,6 @@
+{
+  "success": true,
+  "timestamp": "2025-08-17T17:33:47.747Z",
+  "compilation_time": 370,
+  "code_snapshot": "module counter::simple {\n    public fun add(a: u64, b: u64): u64 {\n        a + b\n    }\n\n    public fun multiply(a: u64, b: u64): u64 {\n        a * b\n    }\n}"
+}

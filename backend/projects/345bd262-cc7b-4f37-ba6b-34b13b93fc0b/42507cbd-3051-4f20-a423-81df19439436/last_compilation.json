@@ -1,0 +1,6 @@
+{
+  "success": true,
+  "timestamp": "2025-08-17T17:34:12.318Z",
+  "compilation_time": 354,
+  "code_snapshot": "module hello_world::greetings {\n    use std::string::{Self, String};\n    \n    public fun greet(): String {\n        string::utf8(b\"Hello, IOTA World!\")\n    }\n\n    public fun get_message(): vector<u8> {\n        b\"Welcome to IOTA Playground!\"\n    }\n}"
+}

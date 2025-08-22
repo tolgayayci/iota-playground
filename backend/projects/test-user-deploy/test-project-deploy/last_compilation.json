@@ -1,0 +1,6 @@
+{
+  "success": true,
+  "timestamp": "2025-08-18T18:27:36.673Z",
+  "compilation_time": 1128,
+  "code_snapshot": "module 0x0::hello {\n    public fun greet(): vector<u8> {\n        b\"Hello, IOTA!\"\n    }\n    \n    public entry fun say_hello() {\n        // Entry function for demonstration\n    }\n}"
+}

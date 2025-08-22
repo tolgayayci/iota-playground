@@ -1,0 +1,9 @@
+[package]
+name = "user_project"
+
+[dependencies]
+
+[addresses]
+user_module = "0x0"
+hello_world = "0x0"
+counter = "0x0"

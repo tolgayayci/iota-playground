@@ -1,0 +1,1 @@
+module hello_world::hello { use iota::object::UID; use iota::transfer; use iota::tx_context::TxContext; public struct Counter has key { id: UID, value: u64 } public fun create(ctx: &mut TxContext) { transfer::share_object(Counter { id: object::new(ctx), value: 0 }) } }

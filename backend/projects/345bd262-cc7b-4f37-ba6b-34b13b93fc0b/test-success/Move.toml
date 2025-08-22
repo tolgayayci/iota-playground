@@ -1,0 +1,11 @@
+[package]
+name = "user_project"
+edition = "2024.beta"
+
+[dependencies]
+
+[addresses]
+user_project = "0x0"
+hello_world = "0x0"
+counter = "0x0"
+user_module = "0x0"
