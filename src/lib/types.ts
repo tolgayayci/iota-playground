@@ -28,16 +28,21 @@ export interface ModuleFunction {
   inputs?: ModuleFunctionInput[];
   outputs?: ModuleFunctionOutput[];
   parameters?: ModuleFunctionInput[]; // Move format
-  visibility?: 'public' | 'entry' | 'private';
+  visibility?: 'public' | 'entry' | 'private' | 'friend';
   is_entry?: boolean; // IOTA Move format
   module?: string; // Module name for function calls
   return_type?: string; // Move return type
+  returnType?: string; // Alternative return type field
+  typeParameters?: string[]; // Generic type parameters
+  isMut?: boolean; // Whether the function mutates state
+  isOptional?: boolean; // Whether parameters are optional
 }
 
 export interface ModuleFunctionInput {
   name: string;
   type: string;
   indexed?: boolean;
+  isOptional?: boolean;
 }
 
 export interface ModuleFunctionOutput {
@@ -56,11 +61,15 @@ export interface Deployment {
   project_id: string;
   user_id: string;
   contract_address: string;
+  package_id: string;
+  module_address: string;
+  module_name: string;
   abi: ModuleFunction[];
   created_at: string;
   network?: string;
   transaction_hash?: string;
   gas_used?: number;
+  source_code?: string;
 }
 
 export interface CompilationResult {

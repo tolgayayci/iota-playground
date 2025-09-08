@@ -14,7 +14,8 @@ import {
   Loader2,
   Package,
   AlertTriangle,
-  Eye
+  Eye,
+  FolderOpen
 } from 'lucide-react';
 import {
   Tooltip,
@@ -24,6 +25,7 @@ import {
 } from '@/components/ui/tooltip';
 import { IotaClient, getFullnodeUrl } from '@iota/iota-sdk/client';
 import { useToast } from '@/hooks/use-toast';
+import { ObjectBrowser } from './ObjectBrowser';
 
 export interface ObjectIdInputProps {
   value: string;
@@ -33,6 +35,7 @@ export interface ObjectIdInputProps {
   className?: string;
   expectedType?: string; // Expected object type (e.g., "Counter", "Coin", etc.)
   network?: 'testnet' | 'mainnet';
+  packageId?: string; // Package context for showing package-related objects
 }
 
 interface ValidationResult {
@@ -66,7 +69,8 @@ export function ObjectIdInput({
   disabled = false,
   className,
   expectedType,
-  network = 'testnet'
+  network = 'testnet',
+  packageId
 }: ObjectIdInputProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [validation, setValidation] = useState<ValidationResult>({ isValid: true });
@@ -74,6 +78,7 @@ export function ObjectIdInput({
     isChecking: false,
     exists: false
   });
+  const [showObjectBrowser, setShowObjectBrowser] = useState(false);
   const { toast } = useToast();
 
   // Validate object ID format with normalization (more lenient for explorer inputs)
@@ -286,27 +291,48 @@ export function ObjectIdInput({
     return "border-green-500/20";
   };
 
+  const handleObjectSelect = (objectId: string) => {
+    onChange(objectId);
+    setShowObjectBrowser(false);
+    // Trigger verification for the selected object
+    verifyObject(objectId);
+  };
+
   return (
     <div className={cn("space-y-3", className)}>
-      {/* Input with validation indicators */}
-      <div className="relative">
-        <Input
-          value={value}
-          onChange={handleInputChange}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          placeholder={placeholder || `Enter ${expectedType || 'object'} ID (0x...)`}
-          disabled={disabled}
-          className={cn(
-            "pr-10 font-mono text-sm",
-            getInputBorderColor()
-          )}
-        />
-        
-        {/* Validation indicator */}
-        <div className="absolute right-3 top-1/2 -translate-y-1/2">
-          {getValidationIcon()}
+      {/* Input with validation indicators and browse button */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Input
+            value={value}
+            onChange={handleInputChange}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            placeholder={placeholder || `Enter ${expectedType || 'object'} ID (0x...)`}
+            disabled={disabled}
+            className={cn(
+              "pr-10 font-mono text-sm",
+              getInputBorderColor()
+            )}
+          />
+          
+          {/* Validation indicator */}
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            {getValidationIcon()}
+          </div>
         </div>
+        
+        {/* Browse button */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowObjectBrowser(true)}
+          disabled={disabled}
+          className="gap-1.5"
+        >
+          <FolderOpen className="h-4 w-4" />
+          Browse
+        </Button>
       </div>
 
       {/* Type info and controls */}
@@ -457,9 +483,10 @@ export function ObjectIdInput({
         </div>
       )}
 
-      {/* Expected type mismatch warning */}
+      {/* Expected type mismatch warning - only show for non-reference types */}
       {expectedType && objectState.exists && objectState.info?.type && 
-       !objectState.info.type.toLowerCase().includes(expectedType.toLowerCase()) && (
+       !expectedType.startsWith('&') &&
+       !objectState.info.type.toLowerCase().includes(expectedType.replace('&', '').toLowerCase()) && (
         <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-md p-2">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-3 w-3 flex-shrink-0" />
@@ -469,6 +496,15 @@ export function ObjectIdInput({
           </div>
         </div>
       )}
+      
+      {/* Object Browser Modal */}
+      <ObjectBrowser
+        open={showObjectBrowser}
+        onOpenChange={setShowObjectBrowser}
+        onSelectObject={handleObjectSelect}
+        expectedType={expectedType}
+        network={network}
+      />
     </div>
   );
 }

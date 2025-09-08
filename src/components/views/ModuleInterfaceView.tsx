@@ -8,10 +8,13 @@ import { ModuleFunctionCard } from '@/components/module-interface/ModuleFunction
 import { ModuleEmptyState } from '@/components/module-interface/ModuleEmptyState';
 import { ModulePackageSelector } from '@/components/module-interface/ModulePackageSelector';
 import { PTBExecuteDialogV2 as PTBExecuteDialog } from '@/components/module-interface/PTBExecuteDialogV2';
-import { ModuleExecutionHistory } from '@/components/module-interface/ModuleExecutionHistory';
+import { EnhancedExecutionHistory } from '@/components/module-interface/EnhancedExecutionHistory';
+import { GroupedModuleFunctions } from '@/components/module-interface/GroupedModuleFunctions';
+import { CompactFunctionList } from '@/components/module-interface/CompactFunctionList';
+import { ViewFunctionDialog } from '@/components/module-interface/ViewFunctionDialog';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
-import { History, PlayCircle, Package, RefreshCw, AlertCircle, Wallet, Globe, User, ExternalLink } from 'lucide-react';
+import { History, PlayCircle, Package, RefreshCw, AlertCircle, Wallet, Globe, User, ExternalLink, Lock, Unlock, CheckCircle, XCircle, Eye } from 'lucide-react';
 import { fetchModuleInterface, verifyPackageExists, clearModuleInterfaceCache, MODULE_INTERFACE_VERSION } from '@/lib/moduleInterface';
 
 interface ModuleInterfaceViewProps {
@@ -25,11 +28,14 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
   const [isPackageVerified, setIsPackageVerified] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedFunction, setSelectedFunction] = useState<ModuleFunction | null>(null);
+  const [viewFunction, setViewFunction] = useState<ModuleFunction | null>(null);
   const [activeView, setActiveView] = useState<'interface' | 'history'>('interface');
   const [isLoading, setIsLoading] = useState(true);
   const [moduleInterface, setModuleInterface] = useState<ModuleInterfaceData | null>(null);
   const [selectedModule, setSelectedModule] = useState<string>('');
   const [isFetchingInterface, setIsFetchingInterface] = useState(false);
+  const [selectedVisibility, setSelectedVisibility] = useState<string>('all');
+  const [selectedHistoryStatus, setSelectedHistoryStatus] = useState<'all' | 'success' | 'failed'>('all');
   const [deploymentMetadata, setDeploymentMetadata] = useState<{
     walletType?: 'playground' | 'external';
     deployerAddress?: string;
@@ -244,6 +250,17 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
     setSelectedFunction(method);
   };
 
+  const handleView = (method: ModuleFunction) => {
+    if (isSharedView) {
+      toast({
+        title: "Read-only View",
+        description: "Function viewing is disabled in shared view",
+      });
+      return;
+    }
+    setViewFunction(method);
+  };
+
   return (
     <div className="h-full flex flex-col bg-background border rounded-md overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/40">
@@ -311,50 +328,104 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
           
           {/* Deployment Badges */}
           {selectedDeployment && (
-            <div className="px-4 py-3 border-b bg-muted/20 flex items-center gap-2 flex-wrap">
-              {/* Wallet Type Badge */}
-              <Badge variant={deploymentMetadata.walletType === 'playground' ? 'default' : 'secondary'} className="gap-1">
-                <Wallet className="h-3 w-3" />
-                {deploymentMetadata.walletType === 'playground' ? 'Playground Wallet' : 'External Wallet'}
-              </Badge>
-              
-              {/* Network Badge */}
-              <Badge variant={selectedDeployment.network === 'mainnet' ? 'destructive' : 'outline'} className="gap-1">
-                <Globe className="h-3 w-3" />
-                {selectedDeployment.network || 'testnet'}
-              </Badge>
-              
-              {/* Deployer Address Badge - Clickable */}
-              {deploymentMetadata.deployerAddress && (
-                <Badge 
-                  variant="outline" 
-                  className="gap-1 cursor-pointer hover:bg-muted transition-colors"
-                  onClick={() => {
-                    const explorerUrl = `https://explorer.iota.org/address/${deploymentMetadata.deployerAddress}?network=${selectedDeployment.network || 'testnet'}`;
-                    window.open(explorerUrl, '_blank');
-                  }}
-                >
-                  <User className="h-3 w-3" />
-                  Deployer: {deploymentMetadata.deployerAddress.slice(0, 6)}...{deploymentMetadata.deployerAddress.slice(-4)}
-                  <ExternalLink className="h-3 w-3 ml-1" />
+            <div className="px-4 py-3 border-b bg-muted/20 flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Wallet Type Badge */}
+                <Badge variant={deploymentMetadata.walletType === 'playground' ? 'default' : 'secondary'} className="gap-1">
+                  <Wallet className="h-3 w-3" />
+                  {deploymentMetadata.walletType === 'playground' ? 'Playground Wallet' : 'External Wallet'}
                 </Badge>
-              )}
-              
-              {/* Package ID Badge - Clickable */}
-              {selectedDeployment.package_id && (
-                <Badge 
-                  variant="outline" 
-                  className="gap-1 cursor-pointer hover:bg-muted transition-colors"
-                  onClick={() => {
-                    const explorerUrl = `https://explorer.iota.org/object/${selectedDeployment.package_id}?network=${selectedDeployment.network || 'testnet'}`;
-                    window.open(explorerUrl, '_blank');
-                  }}
-                >
-                  <Package className="h-3 w-3" />
-                  Package: {selectedDeployment.package_id.slice(0, 6)}...{selectedDeployment.package_id.slice(-4)}
-                  <ExternalLink className="h-3 w-3 ml-1" />
+                
+                {/* Network Badge */}
+                <Badge variant={selectedDeployment.network === 'mainnet' ? 'destructive' : 'outline'} className="gap-1">
+                  <Globe className="h-3 w-3" />
+                  {selectedDeployment.network || 'testnet'}
                 </Badge>
-              )}
+                
+                {/* Deployer Address Badge - Clickable */}
+                {deploymentMetadata.deployerAddress && (
+                  <Badge 
+                    variant="outline" 
+                    className="gap-1 cursor-pointer hover:bg-muted transition-colors"
+                    onClick={() => {
+                      const explorerUrl = `https://explorer.iota.org/address/${deploymentMetadata.deployerAddress}?network=${selectedDeployment.network || 'testnet'}`;
+                      window.open(explorerUrl, '_blank');
+                    }}
+                  >
+                    <User className="h-3 w-3" />
+                    Deployer: {deploymentMetadata.deployerAddress.slice(0, 6)}...{deploymentMetadata.deployerAddress.slice(-4)}
+                    <ExternalLink className="h-3 w-3 ml-1" />
+                  </Badge>
+                )}
+                
+                {/* Package ID Badge - Clickable */}
+                {selectedDeployment.package_id && (
+                  <Badge 
+                    variant="outline" 
+                    className="gap-1 cursor-pointer hover:bg-muted transition-colors"
+                    onClick={() => {
+                      const explorerUrl = `https://explorer.iota.org/object/${selectedDeployment.package_id}?network=${selectedDeployment.network || 'testnet'}`;
+                      window.open(explorerUrl, '_blank');
+                    }}
+                  >
+                    <Package className="h-3 w-3" />
+                    Package: {selectedDeployment.package_id.slice(0, 6)}...{selectedDeployment.package_id.slice(-4)}
+                    <ExternalLink className="h-3 w-3 ml-1" />
+                  </Badge>
+                )}
+              </div>
+              
+              {/* Visibility Filter Badges */}
+              {moduleInterface && (() => {
+                const currentModule = moduleInterface.modules.find(m => m.name === selectedModule) || moduleInterface.modules[0];
+                if (!currentModule) return null;
+                
+                const entryCount = currentModule.functions.filter(f => f.is_entry || f.visibility === 'entry').length;
+                const publicCount = currentModule.functions.filter(f => f.visibility === 'public' && !f.is_entry).length;
+                const privateCount = currentModule.functions.filter(f => f.visibility === 'private').length;
+                
+                return (
+                  <div className="flex items-center gap-2">
+                    <Badge 
+                      variant={selectedVisibility === 'all' ? 'default' : 'outline'}
+                      className="gap-1 cursor-pointer"
+                      onClick={() => setSelectedVisibility('all')}
+                    >
+                      All ({currentModule.functions.length})
+                    </Badge>
+                    {entryCount > 0 && (
+                      <Badge 
+                        variant={selectedVisibility === 'entry' ? 'default' : 'outline'}
+                        className={`gap-1 cursor-pointer ${selectedVisibility === 'entry' ? '' : 'text-green-600 dark:text-green-500'}`}
+                        onClick={() => setSelectedVisibility('entry')}
+                      >
+                        <PlayCircle className="h-3 w-3" />
+                        Entry ({entryCount})
+                      </Badge>
+                    )}
+                    {publicCount > 0 && (
+                      <Badge 
+                        variant={selectedVisibility === 'public' ? 'default' : 'outline'}
+                        className={`gap-1 cursor-pointer ${selectedVisibility === 'public' ? '' : 'text-blue-600 dark:text-blue-500'}`}
+                        onClick={() => setSelectedVisibility('public')}
+                      >
+                        <Unlock className="h-3 w-3" />
+                        Public ({publicCount})
+                      </Badge>
+                    )}
+                    {privateCount > 0 && (
+                      <Badge 
+                        variant={selectedVisibility === 'private' ? 'default' : 'outline'}
+                        className={`gap-1 cursor-pointer ${selectedVisibility === 'private' ? '' : 'text-red-600 dark:text-red-500'}`}
+                        onClick={() => setSelectedVisibility('private')}
+                      >
+                        <Lock className="h-3 w-3" />
+                        Private ({privateCount})
+                      </Badge>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
           
@@ -400,60 +471,31 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
                   )}
                   
                   {/* Functions Display */}
-                  <ScrollArea className="flex-1">
-                    <div className="p-4 space-y-2">
-                      {(() => {
-                        const currentModule = moduleInterface.modules.find(m => m.name === selectedModule) || 
-                                            moduleInterface.modules[0];
-                        
-                        if (!currentModule) {
-                          return (
-                            <div className="p-8 text-center">
-                              <div className="text-muted-foreground mb-2">Module not found</div>
-                            </div>
-                          );
-                        }
-
-                        const hasContent = currentModule.functions.length > 0;
-                        
-                        if (!hasContent) {
-                          return (
-                            <div className="p-8 text-center">
-                              <div className="text-muted-foreground mb-2">No public functions</div>
-                              <div className="text-sm text-muted-foreground">
-                                This module doesn't expose any public functions.
-                              </div>
-                            </div>
-                          );
-                        }
-
+                  <div className="flex-1 overflow-hidden">
+                    {(() => {
+                      const currentModule = moduleInterface.modules.find(m => m.name === selectedModule) || 
+                                          moduleInterface.modules[0];
+                      
+                      if (!currentModule) {
                         return (
-                          <div className="space-y-6">
-                            {/* Functions Section */}
-                            {currentModule.functions.length > 0 && (
-                              <div>
-                                <h4 className="text-sm font-medium text-muted-foreground mb-3 px-1 flex items-center gap-2">
-                                  <PlayCircle className="h-4 w-4" />
-                                  Functions ({currentModule.functions.length})
-                                </h4>
-                                <div className="space-y-2">
-                                  {currentModule.functions.map((method, index) => (
-                                    <ModuleFunctionCard
-                                      key={`${currentModule.name}-${method.name}-${index}`}
-                                      method={{ ...method, module: currentModule.name }}
-                                      onExecute={handleExecute}
-                                      isPackageVerified={isPackageVerified}
-                                      isSharedView={isSharedView}
-                                    />
-                                  ))}
-                                </div>
-                              </div>
-                            )}
+                          <div className="p-8 text-center">
+                            <div className="text-muted-foreground mb-2">Module not found</div>
                           </div>
                         );
-                      })()}
-                    </div>
-                  </ScrollArea>
+                      }
+
+                      return (
+                        <CompactFunctionList
+                          module={currentModule}
+                          onExecute={handleExecute}
+                          onView={handleView}
+                          isPackageVerified={isPackageVerified}
+                          isSharedView={isSharedView}
+                          selectedVisibility={selectedVisibility}
+                        />
+                      );
+                    })()}
+                  </div>
                 </>
               ) : (
                 <div className="flex-1 flex items-center justify-center">
@@ -501,57 +543,102 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
             isLoading={isLoading}
           />
           
-          {/* Deployment Badges - Same as Interface Tab */}
+          {/* Deployment Badges - Same as Interface Tab but with History filters */}
           {selectedDeployment && (
-            <div className="px-4 py-3 border-b bg-muted/20 flex items-center gap-2 flex-wrap">
-              {/* Wallet Type Badge */}
-              <Badge variant={deploymentMetadata.walletType === 'playground' ? 'default' : 'secondary'} className="gap-1">
-                <Wallet className="h-3 w-3" />
-                {deploymentMetadata.walletType === 'playground' ? 'Playground Wallet' : 'External Wallet'}
-              </Badge>
-              
-              {/* Network Badge */}
-              <Badge variant={selectedDeployment.network === 'mainnet' ? 'destructive' : 'outline'} className="gap-1">
-                <Globe className="h-3 w-3" />
-                {selectedDeployment.network || 'testnet'}
-              </Badge>
-              
-              {/* Deployer Address Badge - Clickable */}
-              {deploymentMetadata.deployerAddress && (
-                <Badge 
-                  variant="outline" 
-                  className="gap-1 cursor-pointer hover:bg-muted transition-colors"
-                  onClick={() => {
-                    const explorerUrl = `https://explorer.iota.org/address/${deploymentMetadata.deployerAddress}?network=${selectedDeployment.network || 'testnet'}`;
-                    window.open(explorerUrl, '_blank');
-                  }}
-                >
-                  <User className="h-3 w-3" />
-                  Deployer: {deploymentMetadata.deployerAddress.slice(0, 6)}...{deploymentMetadata.deployerAddress.slice(-4)}
-                  <ExternalLink className="h-3 w-3 ml-1" />
+            <div className="px-4 py-3 border-b bg-muted/20 flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Wallet Type Badge */}
+                <Badge variant={deploymentMetadata.walletType === 'playground' ? 'default' : 'secondary'} className="gap-1">
+                  <Wallet className="h-3 w-3" />
+                  {deploymentMetadata.walletType === 'playground' ? 'Playground Wallet' : 'External Wallet'}
                 </Badge>
-              )}
-              
-              {/* Package ID Badge - Clickable */}
-              {selectedDeployment.package_id && (
-                <Badge 
-                  variant="outline" 
-                  className="gap-1 cursor-pointer hover:bg-muted transition-colors"
-                  onClick={() => {
-                    const explorerUrl = `https://explorer.iota.org/object/${selectedDeployment.package_id}?network=${selectedDeployment.network || 'testnet'}`;
-                    window.open(explorerUrl, '_blank');
-                  }}
-                >
-                  <Package className="h-3 w-3" />
-                  Package: {selectedDeployment.package_id.slice(0, 6)}...{selectedDeployment.package_id.slice(-4)}
-                  <ExternalLink className="h-3 w-3 ml-1" />
+                
+                {/* Network Badge */}
+                <Badge variant={selectedDeployment.network === 'mainnet' ? 'destructive' : 'outline'} className="gap-1">
+                  <Globe className="h-3 w-3" />
+                  {selectedDeployment.network || 'testnet'}
                 </Badge>
-              )}
+                
+                {/* Deployer Address Badge - Clickable */}
+                {deploymentMetadata.deployerAddress && (
+                  <Badge 
+                    variant="outline" 
+                    className="gap-1 cursor-pointer hover:bg-muted transition-colors"
+                    onClick={() => {
+                      const explorerUrl = `https://explorer.iota.org/address/${deploymentMetadata.deployerAddress}?network=${selectedDeployment.network || 'testnet'}`;
+                      window.open(explorerUrl, '_blank');
+                    }}
+                  >
+                    <User className="h-3 w-3" />
+                    Deployer: {deploymentMetadata.deployerAddress.slice(0, 6)}...{deploymentMetadata.deployerAddress.slice(-4)}
+                    <ExternalLink className="h-3 w-3 ml-1" />
+                  </Badge>
+                )}
+                
+                {/* Package ID Badge - Clickable */}
+                {selectedDeployment.package_id && (
+                  <Badge 
+                    variant="outline" 
+                    className="gap-1 cursor-pointer hover:bg-muted transition-colors"
+                    onClick={() => {
+                      const explorerUrl = `https://explorer.iota.org/object/${selectedDeployment.package_id}?network=${selectedDeployment.network || 'testnet'}`;
+                      window.open(explorerUrl, '_blank');
+                    }}
+                  >
+                    <Package className="h-3 w-3" />
+                    Package: {selectedDeployment.package_id.slice(0, 6)}...{selectedDeployment.package_id.slice(-4)}
+                    <ExternalLink className="h-3 w-3 ml-1" />
+                  </Badge>
+                )}
+              </div>
+              
+              {/* History Status Filters */}
+              <div className="flex items-center gap-2">
+                <Badge 
+                  variant={selectedHistoryStatus === 'all' ? 'default' : 'outline'}
+                  className="gap-1 cursor-pointer"
+                  onClick={() => setSelectedHistoryStatus('all')}
+                >
+                  All
+                </Badge>
+                <Badge 
+                  variant={selectedHistoryStatus === 'success' ? 'default' : 'outline'}
+                  className={`gap-1 cursor-pointer ${selectedHistoryStatus === 'success' ? '' : 'text-green-600 dark:text-green-500'}`}
+                  onClick={() => setSelectedHistoryStatus('success')}
+                >
+                  <CheckCircle className="h-3 w-3" />
+                  Success
+                </Badge>
+                <Badge 
+                  variant={selectedHistoryStatus === 'failed' ? 'default' : 'outline'}
+                  className={`gap-1 cursor-pointer ${selectedHistoryStatus === 'failed' ? '' : 'text-red-600 dark:text-red-500'}`}
+                  onClick={() => setSelectedHistoryStatus('failed')}
+                >
+                  <XCircle className="h-3 w-3" />
+                  Failed
+                </Badge>
+              </div>
             </div>
           )}
           
           {selectedDeployment ? (
-            <ModuleExecutionHistory projectId={projectId} selectedDeployment={selectedDeployment} key={historyRefreshKey} />
+            <EnhancedExecutionHistory 
+              projectId={projectId} 
+              selectedDeployment={selectedDeployment} 
+              key={historyRefreshKey}
+              filterStatus={selectedHistoryStatus}
+              onReplayFunction={(functionName, parameters) => {
+                // Find the function in the module interface and open the execute dialog
+                if (moduleInterface) {
+                  const func = moduleInterface.modules
+                    .flatMap(m => m.functions.map(f => ({ ...f, module: m.name })))
+                    .find(f => f.name === functionName);
+                  if (func) {
+                    setSelectedFunction(func);
+                  }
+                }
+              }}
+            />
           ) : (
             <div className="flex-1">
               <ModuleEmptyState
@@ -584,6 +671,17 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
             setHistoryRefreshKey(prev => prev + 1);
           }}
           network={deploymentMetadata.network as 'testnet' | 'mainnet' || 'testnet'}
+        />
+      )}
+
+      {/* View Function Dialog */}
+      {viewFunction && selectedDeployment && !isSharedView && (
+        <ViewFunctionDialog
+          isOpen={true}
+          onClose={() => setViewFunction(null)}
+          method={viewFunction}
+          packageId={selectedDeployment.package_id}
+          network={selectedDeployment.network || 'testnet'}
         />
       )}
     </div>

@@ -16,9 +16,13 @@ import {
   CheckCircle,
   Zap,
   Wallet,
+  PlayCircle,
+  Eye,
 } from 'lucide-react';
 import { ModuleFunction } from '@/lib/types';
 import { ParameterInput } from './inputs';
+import { ParameterValidator } from './ParameterValidator';
+import { ExecutionResultDisplay, ExecutionResult as ResultDisplayType } from './ExecutionResultDisplay';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Transaction } from '@iota/iota-sdk/transactions';
@@ -39,14 +43,8 @@ interface PTBExecuteDialogV2Props {
   onExecutionSaved?: () => void; // Callback when execution is saved to history
 }
 
-interface ExecutionResult {
-  status: 'success' | 'error' | 'pending';
-  outputs?: any[];
-  error?: string;
-  txHash?: string;
-  gasUsed?: string;
-  explorerUrl?: string;
-}
+// Use ResultDisplayType from ExecutionResultDisplay component
+type ExecutionResult = ResultDisplayType;
 
 enum ExecutionState {
   IDLE = "idle",
@@ -75,12 +73,14 @@ export function PTBExecuteDialogV2({
 }: PTBExecuteDialogV2Props) {
   // Core state
   const [inputs, setInputs] = useState<Record<string, string>>({});
+  const [inputValidations, setInputValidations] = useState<Record<string, boolean>>({});
   const [executionState, setExecutionState] = useState<ExecutionState>(ExecutionState.IDLE);
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [walletSelection, setWalletSelection] = useState<WalletSelection>({ 
     type: 'none', 
     canExecute: false 
   });
+  const [showResultTab, setShowResultTab] = useState(false);
   
   // Hooks
   const { toast } = useToast();
@@ -153,7 +153,11 @@ export function PTBExecuteDialogV2({
     param => !param.type.toLowerCase().includes('txcontext')
   );
   const hasParameters = parameters.length > 0;
-  const allParametersFilled = parameters.every(param => inputs[param.name]?.trim());
+  const allParametersFilled = parameters.every(param => {
+    const value = inputs[param.name]?.trim();
+    const isValid = inputValidations[param.name] !== false;
+    return value && isValid;
+  });
   
   // Determine wallet selection based on function type and network
   useEffect(() => {
@@ -234,6 +238,11 @@ export function PTBExecuteDialogV2({
   // Handle input changes
   const handleInputChange = (name: string, value: string) => {
     setInputs(prev => ({ ...prev, [name]: value }));
+  };
+  
+  // Handle validation changes
+  const handleValidationChange = (name: string, isValid: boolean) => {
+    setInputValidations(prev => ({ ...prev, [name]: isValid }));
   };
   
   // Normalize object IDs from explorer format
@@ -475,6 +484,7 @@ export function PTBExecuteDialogV2({
           });
         } else {
           // External wallet execution - build transaction here
+          const startTime = Date.now();
           const client = new IotaClient({ url: getFullnodeUrl(network) });
           const tx = new Transaction();
           
@@ -559,14 +569,28 @@ export function PTBExecuteDialogV2({
               
               const successResult: ExecutionResult = {
                 status: 'success',
-                outputs,
                 txHash: result.digest,
+                digest: result.digest,
+                network,
+                timestamp: new Date().toISOString(),
                 gasUsed: result.effects?.gasUsed?.computationCost || '0',
-                explorerUrl: `https://explorer.iota.org/txblock/${result.digest}?network=${network}`,
+                computationCost: result.effects?.gasUsed?.computationCost,
+                storageCost: result.effects?.gasUsed?.storageCost,
+                storageRebate: result.effects?.gasUsed?.storageRebate,
+                objectChanges: result.objectChanges,
+                events: result.events,
+                balanceChanges: result.balanceChanges,
+                effects: result.effects,
+                functionName: capturedMethodName,
+                moduleName: capturedModuleName,
+                packageId,
+                parameters: inputValues,
+                executionTime: Date.now() - startTime,
               };
               
               setResult(successResult);
               setExecutionState(ExecutionState.SUCCESS);
+              setShowResultTab(true);
               onExecute(successResult);
               
               // Save to execution history
@@ -601,11 +625,13 @@ export function PTBExecuteDialogV2({
               const errorResult: ExecutionResult = {
                 status: 'error',
                 error: errorMessage,
-                outputs: errorDetails ? [{ 
-                  type: 'errorDetails', 
-                  label: 'Error Details',
-                  data: errorDetails 
-                }] : []
+                errorDetails: errorDetails,
+                network,
+                timestamp: new Date().toISOString(),
+                functionName: capturedMethodName,
+                moduleName: capturedModuleName,
+                packageId,
+                parameters: inputValues,
               };
               
               setResult(errorResult);
@@ -690,12 +716,14 @@ export function PTBExecuteDialogV2({
           
           const successResult: ExecutionResult = {
             status: 'success',
-            outputs: outputs.length > 0 ? outputs : [{
-              type: 'info',
-              label: 'Result',
-              data: 'Function executed successfully (no return values)'
-            }],
+            returnValues: returnValues,
             gasUsed: gasUsed || '0',
+            network,
+            timestamp: new Date().toISOString(),
+            functionName: method.name,
+            moduleName: moduleNameForView,
+            packageId,
+            parameters: Object.values(inputs),
           };
           
           setResult(successResult);
@@ -731,11 +759,13 @@ export function PTBExecuteDialogV2({
       setResult({
         status: 'error',
         error: errorMessage,
-        outputs: errorDetails ? [{
-          type: 'errorDetails',
-          label: 'Stack Trace',
-          data: errorDetails
-        }] : []
+        errorDetails: errorDetails,
+        network,
+        timestamp: new Date().toISOString(),
+        functionName: method.name,
+        moduleName: moduleNameForGeneralError,
+        packageId,
+        parameters: Object.values(inputs),
       });
       setExecutionState(ExecutionState.ERROR);
       
@@ -852,11 +882,15 @@ export function PTBExecuteDialogV2({
                         {param.type}
                       </span>
                     </div>
-                    <ParameterInput
-                      parameter={param}
+                    <ParameterValidator
+                      name={param.name}
+                      type={param.type}
                       value={inputs[param.name] || ''}
                       onChange={(value) => handleInputChange(param.name, value)}
-                      network={network}
+                      onValidationChange={(isValid) => handleValidationChange(param.name, isValid)}
+                      required={true}
+                      index={index}
+                      packageId={packageId}
                     />
                   </div>
                 ))}
@@ -868,100 +902,13 @@ export function PTBExecuteDialogV2({
             </div>
           )}
           
-          {/* Result Section */}
+          {/* Result Section - Using Enhanced Display Component */}
           {result && result.status !== 'pending' && (
             <div className="mt-6 pt-6 border-t">
-              <h3 className="text-sm font-medium text-muted-foreground mb-3">
-                Result
-              </h3>
-              
-              {result.status === 'success' ? (
-                <div className="space-y-3">
-                  <Alert className="border-green-200 bg-green-50 dark:bg-green-950/20">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <AlertDescription className="text-green-900 dark:text-green-200">
-                      Transaction executed successfully
-                    </AlertDescription>
-                  </Alert>
-                  
-                  {/* Transaction Link */}
-                  {result.txHash && (
-                    <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                      <div>
-                        <span className="text-sm font-medium">Transaction Hash</span>
-                        {result.gasUsed && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Gas Used: {result.gasUsed}
-                          </p>
-                        )}
-                      </div>
-                      <a
-                        href={result.explorerUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-primary hover:underline flex items-center gap-1"
-                      >
-                        {result.txHash.slice(0, 8)}...{result.txHash.slice(-6)}
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
-                  )}
-                  
-                  {/* Transaction Outputs - Show each type of output separately */}
-                  {result.outputs && result.outputs.length > 0 && (
-                    <div className="space-y-3">
-                      {result.outputs.map((output: any, index: number) => (
-                        <div key={index} className="space-y-2">
-                          <h4 className="text-sm font-medium flex items-center gap-2">
-                            {output.label || output.type || 'Output'}
-                            {output.data && Array.isArray(output.data) && (
-                              <Badge variant="secondary" className="text-xs">
-                                {output.data.length} items
-                              </Badge>
-                            )}
-                          </h4>
-                          <div className="p-3 bg-muted/50 rounded-lg max-h-[200px] overflow-y-auto">
-                            <pre className="text-xs font-mono overflow-x-auto">
-                              {typeof output.data === 'string' 
-                                ? output.data 
-                                : JSON.stringify(output.data, null, 2)}
-                            </pre>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription className="font-medium">
-                      {result.error || 'Transaction failed'}
-                    </AlertDescription>
-                  </Alert>
-                  
-                  {/* Error Details if available */}
-                  {result.outputs && result.outputs.length > 0 && (
-                    <div className="space-y-2">
-                      {result.outputs.map((output: any, index: number) => (
-                        <div key={index}>
-                          <h4 className="text-sm font-medium mb-2">
-                            {output.label || 'Error Details'}
-                          </h4>
-                          <div className="p-3 bg-red-50 dark:bg-red-950/20 rounded-lg max-h-[200px] overflow-y-auto">
-                            <pre className="text-xs font-mono text-red-900 dark:text-red-200 overflow-x-auto">
-                              {typeof output.data === 'string' 
-                                ? output.data 
-                                : JSON.stringify(output.data, null, 2)}
-                            </pre>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              <ExecutionResultDisplay 
+                result={result}
+                showCodeGeneration={true}
+              />
             </div>
           )}
         </div>

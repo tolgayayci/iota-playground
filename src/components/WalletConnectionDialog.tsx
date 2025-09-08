@@ -37,10 +37,21 @@ export function WalletConnectionDialog({ open, onOpenChange }: WalletConnectionD
     connectExternalWallet,
     network, 
     currentWallet,
+    walletType,
+    isPlaygroundWallet,
+    isConnected,
   } = useWallet();
   const { toast } = useToast();
   const [isConnecting, setIsConnecting] = useState(false);
-  const [selectedOption, setSelectedOption] = useState<'playground' | 'external' | null>(null);
+  // Initialize with current wallet type or last selection
+  const [selectedOption, setSelectedOption] = useState<'playground' | 'external' | null>(() => {
+    // If already connected, show current wallet type as selected
+    if (isConnected) {
+      return walletType === 'playground' ? 'playground' : 'external';
+    }
+    // Otherwise default to playground for testnet, external for mainnet
+    return network === 'testnet' ? 'playground' : 'external';
+  });
 
   const handlePlaygroundWallet = async () => {
     setIsConnecting(true);
@@ -115,13 +126,18 @@ export function WalletConnectionDialog({ open, onOpenChange }: WalletConnectionD
           <div className="space-y-4">
             {/* Playground Wallet Option */}
             <div 
-              className={`group p-6 border-2 rounded-xl cursor-pointer transition-all duration-200 ${
+              className={`relative group p-6 border-2 rounded-xl cursor-pointer transition-all duration-200 ${
                 selectedOption === 'playground' 
                   ? 'border-primary bg-primary/5 shadow-md' 
                   : 'border-border hover:border-primary/50 hover:shadow-sm'
               } ${network !== 'testnet' ? 'opacity-60 cursor-not-allowed' : ''}`}
               onClick={() => network === 'testnet' && setSelectedOption('playground')}
             >
+              {walletType === 'playground' && isConnected && (
+                <Badge className="absolute top-4 right-4 bg-green-500/10 text-green-600 border-green-500/20">
+                  Current
+                </Badge>
+              )}
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-4 flex-1">
                   <div className={`p-3 rounded-xl transition-colors ${
@@ -163,13 +179,18 @@ export function WalletConnectionDialog({ open, onOpenChange }: WalletConnectionD
 
             {/* External Wallet Option */}
             <div 
-              className={`group p-6 border-2 rounded-xl cursor-pointer transition-all duration-200 ${
+              className={`relative group p-6 border-2 rounded-xl cursor-pointer transition-all duration-200 ${
                 selectedOption === 'external' 
                   ? 'border-primary bg-primary/5 shadow-md' 
                   : 'border-border hover:border-primary/50 hover:shadow-sm'
               }`}
               onClick={() => setSelectedOption('external')}
             >
+              {walletType === 'external' && isConnected && (
+                <Badge className="absolute top-4 right-4 bg-green-500/10 text-green-600 border-green-500/20">
+                  Current
+                </Badge>
+              )}
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-4 flex-1">
                   <div className={`p-3 rounded-xl transition-colors ${
@@ -245,7 +266,7 @@ export function WalletConnectionDialog({ open, onOpenChange }: WalletConnectionD
                   <p className="text-sm">Install IOTA Wallet to connect with your own wallet and private keys.</p>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <a 
-                      href="https://chrome.google.com/webstore/detail/iota-wallet/kncchdiglobfhccbiagbcgdlicipbbil" 
+                      href="https://www.iota.org/products/wallet" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 px-3 py-2 bg-amber-100 dark:bg-amber-900 rounded-lg text-sm font-medium text-amber-800 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"

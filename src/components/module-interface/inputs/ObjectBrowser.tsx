@@ -34,6 +34,7 @@ export interface ObjectBrowserProps {
   onSelectObject: (objectId: string, objectInfo?: any) => void;
   expectedType?: string;
   network?: 'testnet' | 'mainnet';
+  packageId?: string; // Package context for showing package-related objects
 }
 
 interface ObjectInfo {
@@ -58,17 +59,31 @@ export function ObjectBrowser({
   onOpenChange,
   onSelectObject,
   expectedType,
-  network = 'testnet'
+  network = 'testnet',
+  packageId
 }: ObjectBrowserProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [objects, setObjects] = useState<ObjectInfo[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('owned');
+  const [selectedCategory, setSelectedCategory] = useState<string>(packageId ? 'package' : 'owned');
   const { currentAccount } = useWallet();
   const { toast } = useToast();
 
   // Object categories for browsing
   const categories: Record<string, ObjectCategory> = {
+    ...(packageId ? {
+      package: {
+        title: 'Package Objects',
+        description: currentAccount?.address 
+          ? `Your objects from package ${packageId.slice(0, 8)}...`
+          : `Search for objects from package ${packageId.slice(0, 8)}...`,
+        icon: Package,
+        filter: (obj) => {
+          const type = obj.type?.toLowerCase() || '';
+          return type.includes(packageId.toLowerCase());
+        }
+      }
+    } : {}),
     owned: {
       title: 'My Objects',
       description: 'Objects owned by your wallet',
@@ -117,7 +132,46 @@ export function ObjectBrowser({
       const client = new IotaClient({ url: getFullnodeUrl(network) });
       let fetchedObjects: ObjectInfo[] = [];
 
-      if (category === 'owned' && currentAccount?.address) {
+      if (category === 'package' && packageId) {
+        // For package objects, we'll show owned objects if wallet is connected
+        // Otherwise, users can search by object ID
+        
+        if (currentAccount?.address) {
+          try {
+            // Fetch owned objects and filter by package type
+            const response = await client.getOwnedObjects({
+              owner: currentAccount.address,
+              options: {
+                showType: true,
+                showOwner: true,
+                showContent: true,
+                showDisplay: true,
+              },
+              limit: 100 // Fetch more to have better chance of finding package objects
+            });
+
+            // Filter to only show objects from this package
+            fetchedObjects = response.data
+              .filter(obj => obj && obj.data && obj.data.type?.toLowerCase().includes(packageId.toLowerCase()))
+              .map(obj => ({
+                objectId: obj.data?.objectId || '',
+                version: obj.data?.version || '',
+                digest: obj.data?.digest || '',
+                type: obj.data?.type || '',
+                owner: obj.data?.owner || '',
+                content: obj.data?.content || null,
+                display: obj.data?.display || null,
+              }));
+          } catch (error) {
+            console.error('Could not fetch owned objects:', error);
+            fetchedObjects = [];
+          }
+        } else {
+          // No wallet connected - that's OK for package objects
+          // Users can still search by object ID
+          fetchedObjects = [];
+        }
+      } else if (category === 'owned' && currentAccount?.address) {
         // Fetch objects owned by the current account
         const response = await client.getOwnedObjects({
           owner: currentAccount.address,
@@ -130,18 +184,31 @@ export function ObjectBrowser({
           limit: 50
         });
 
-        fetchedObjects = response.data.map(obj => ({
-          objectId: obj.data!.objectId,
-          version: obj.data!.version,
-          digest: obj.data!.digest,
-          type: obj.data!.type,
-          owner: obj.data!.owner,
-          content: obj.data!.content,
-          display: obj.data!.display,
-        }));
+        // Safely map objects, filtering out any without data
+        fetchedObjects = response.data
+          .filter(obj => obj && obj.data)
+          .map(obj => ({
+            objectId: obj.data?.objectId || '',
+            version: obj.data?.version || '',
+            digest: obj.data?.digest || '',
+            type: obj.data?.type || '',
+            owner: obj.data?.owner || '',
+            content: obj.data?.content || null,
+            display: obj.data?.display || null,
+          }));
+        
+        // If packageId is provided, also filter owned objects to show package-related ones
+        if (packageId) {
+          fetchedObjects = fetchedObjects.filter(obj => 
+            obj.type?.toLowerCase().includes(packageId.toLowerCase())
+          );
+        }
+      } else if (category === 'shared') {
+        // For shared objects, we'd need to implement a more specific query
+        // This is a placeholder
+        fetchedObjects = [];
       } else {
-        // For other categories, we'd need more specific queries
-        // This is a simplified implementation
+        // For other categories
         fetchedObjects = [];
       }
 
@@ -293,11 +360,11 @@ export function ObjectBrowser({
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by object ID or type..."
+                placeholder="Enter object ID (0x...) to search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                className="pl-10"
+                className="pl-10 font-mono text-sm"
               />
             </div>
             <Button variant="outline" onClick={handleSearch} disabled={loading}>
@@ -307,7 +374,11 @@ export function ObjectBrowser({
 
           {/* Category Tabs */}
           <Tabs value={selectedCategory} onValueChange={setSelectedCategory}>
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className={cn(
+              "grid w-full",
+              Object.keys(categories).length === 3 && "grid-cols-3",
+              Object.keys(categories).length === 4 && "grid-cols-4"
+            )}>
               {Object.entries(categories).map(([key, category]) => {
                 const Icon = category.icon;
                 return (
@@ -340,6 +411,14 @@ export function ObjectBrowser({
                       {key === 'owned' && !currentAccount?.address && (
                         <div className="text-xs text-muted-foreground mt-1">
                           Connect a wallet to see your objects
+                        </div>
+                      )}
+                      {key === 'package' && packageId && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {currentAccount?.address 
+                            ? 'No objects found from this package in your wallet. You can search for specific object IDs using the search box above.'
+                            : 'Search for objects by entering their object ID in the search box above. Connect a wallet to see your owned objects from this package.'
+                          }
                         </div>
                       )}
                     </div>

@@ -69,6 +69,9 @@ interface WalletContextType {
   // External wallet integration
   availableWallets: ReturnType<typeof useWallets>;
   currentAccount: ReturnType<typeof useCurrentAccount>;
+  
+  // Wallet type switching
+  switchWalletType: (type: 'playground' | 'external') => Promise<boolean>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -106,46 +109,21 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
     let isStale = false;
 
     const initializeWallet = async () => {
-      // Load saved network first
+      // Load saved network first (default to testnet)
       const savedNetwork = localStorage.getItem('iota_network') as NetworkType;
       if (savedNetwork && (savedNetwork === 'testnet' || savedNetwork === 'mainnet')) {
         if (!isStale) setNetwork(savedNetwork);
+      } else {
+        // Default to testnet
+        if (!isStale) setNetwork('testnet');
       }
 
       const savedWalletType = localStorage.getItem('iota_wallet_type');
+      const hasInitialized = localStorage.getItem('iota_wallet_initialized');
+      const wasDisconnected = localStorage.getItem('iota_wallet_disconnected');
 
-      // Priority: Check saved wallet type first to maintain user's choice
-      if (savedWalletType === 'playground' && !isStale) {
-        // User explicitly selected playground wallet
-        const playgroundWallet = createPlaygroundWallet();
-        if (playgroundWallet) {
-          setCurrentWallet(playgroundWallet);
-          setWalletType('playground');
-        }
-      } else if (savedWalletType === 'external' && currentAccount && currentAccount.address && !isStale) {
-        // User selected external wallet and it's connected
-        const externalWallet = new ExternalWallet(
-          currentAccount.address,
-          async (transaction: Transaction) => {
-            return new Promise((resolve, reject) => {
-              signAndExecute(
-                {
-                  transaction,
-                  chain: network === 'testnet' ? 'iota:testnet' : 'iota:mainnet',
-                },
-                {
-                  onSuccess: (result) => resolve(result),
-                  onError: (error) => reject(error),
-                }
-              );
-            });
-          }
-        );
-        
-        setCurrentWallet(externalWallet);
-        setWalletType('external');
-      } else if (currentAccount && currentAccount.address && !savedWalletType && !isStale) {
-        // External wallet connected but no saved preference - use external
+      // If external wallet is connected, use it
+      if (currentAccount && currentAccount.address && !isStale) {
         const externalWallet = new ExternalWallet(
           currentAccount.address,
           async (transaction: Transaction) => {
@@ -167,8 +145,29 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
         setCurrentWallet(externalWallet);
         setWalletType('external');
         localStorage.setItem('iota_wallet_type', 'external');
-      } else if (!isStale) {
-        // No wallet connected
+        localStorage.removeItem('iota_wallet_disconnected');
+      } 
+      // If saved wallet type is playground and not explicitly disconnected
+      else if (savedWalletType === 'playground' && !wasDisconnected && !isStale) {
+        const playgroundWallet = createPlaygroundWallet();
+        if (playgroundWallet) {
+          setCurrentWallet(playgroundWallet);
+          setWalletType('playground');
+        }
+      } 
+      // Auto-initialize playground wallet on first app load (testnet only)
+      else if (!hasInitialized && !wasDisconnected && !currentAccount && network === 'testnet' && !isStale) {
+        const playgroundWallet = createPlaygroundWallet();
+        if (playgroundWallet) {
+          setCurrentWallet(playgroundWallet);
+          setWalletType('playground');
+          localStorage.setItem('iota_wallet_type', 'playground');
+          localStorage.setItem('iota_wallet_initialized', 'true');
+          console.log('Auto-initialized playground wallet for first-time user');
+        }
+      }
+      // No wallet connected
+      else if (!isStale) {
         setCurrentWallet(null);
         setWalletType('none');
         if (savedWalletType === 'external' && !currentAccount) {
@@ -205,8 +204,28 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Save current wallet state before network switch
+    const previousWalletType = walletType;
+    const previousWallet = currentWallet;
+    
     setNetwork(newNetwork);
     localStorage.setItem('iota_network', newNetwork);
+    
+    // Restore wallet connection after network switch
+    if (previousWalletType === 'playground' && newNetwork === 'testnet') {
+      // Keep playground wallet connected when switching within testnet
+      if (!previousWallet) {
+        const playgroundWallet = createPlaygroundWallet();
+        if (playgroundWallet) {
+          setCurrentWallet(playgroundWallet);
+          setWalletType('playground');
+        }
+      }
+    } else if (previousWalletType === 'external') {
+      // External wallets remain connected across network switches
+      // The dapp-kit handles the network change internally
+      setWalletType('external');
+    }
     
     toast({
       title: "Network Switched",
@@ -294,11 +313,70 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
     setCurrentWallet(null);
     setWalletType('none');
     localStorage.removeItem('iota_wallet_type');
+    // Mark that user has explicitly disconnected
+    localStorage.setItem('iota_wallet_disconnected', 'true');
     
     toast({
       title: "Wallet Disconnected",
       description: "Wallet has been disconnected",
     });
+  };
+  
+  // Add function to switch wallet types
+  const switchWalletType = async (newType: 'playground' | 'external') => {
+    if (newType === walletType) return true; // Already using this wallet type
+    
+    if (newType === 'playground') {
+      // Switch to playground wallet
+      if (network !== 'testnet') {
+        await switchNetwork('testnet');
+      }
+      
+      // Disconnect external wallet if connected
+      if (currentAccount) {
+        disconnect();
+      }
+      
+      const playgroundWallet = createPlaygroundWallet();
+      if (playgroundWallet) {
+        setCurrentWallet(playgroundWallet);
+        setWalletType('playground');
+        localStorage.setItem('iota_wallet_type', 'playground');
+        localStorage.removeItem('iota_wallet_disconnected');
+        
+        toast({
+          title: "Switched to Playground Wallet",
+          description: `Using testnet wallet: ${playgroundWallet.address.slice(0, 10)}...`,
+        });
+        return true;
+      }
+    } else {
+      // Switch to external wallet
+      // First disconnect playground if connected
+      if (walletType === 'playground') {
+        setCurrentWallet(null);
+        setWalletType('none');
+      }
+      
+      localStorage.setItem('iota_wallet_type', 'external');
+      localStorage.removeItem('iota_wallet_disconnected');
+      
+      // Open wallet connection if no external wallet connected
+      if (!currentAccount) {
+        toast({
+          title: "Connect External Wallet",
+          description: "Please connect your external wallet to continue",
+        });
+        
+        // Return false to indicate wallet needs to be connected
+        return false;
+      } else {
+        // External wallet already connected
+        return true;
+      }
+    }
+    
+    return false;
   };
 
   const executeTransaction = async (transaction: Transaction) => {
@@ -346,6 +424,7 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
     signAndExecuteTransaction: executeTransaction,
     availableWallets: wallets,
     currentAccount,
+    switchWalletType,
   };
 
   return (
@@ -376,23 +455,16 @@ function DynamicIotaProvider({ children }: { children: ReactNode }) {
     // Listen for storage changes from other tabs
     window.addEventListener('storage', handleStorageChange);
 
-    // Also listen for changes within the same tab
-    const interval = setInterval(() => {
-      const savedNetwork = localStorage.getItem('iota_network') as 'testnet' | 'mainnet' | null;
-      const networkToUse = savedNetwork && (savedNetwork === 'testnet' || savedNetwork === 'mainnet') ? savedNetwork : 'testnet';
-      if (networkToUse !== currentNetwork) {
-        setCurrentNetwork(networkToUse);
-      }
-    }, 1000);
+    // Don't use interval polling as it causes re-renders
+    // The network will update via the storage event or direct state changes
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
-      clearInterval(interval);
     };
   }, [currentNetwork]);
 
   return (
-    <IotaClientProvider networks={networkConfig} defaultNetwork={currentNetwork} key={currentNetwork}>
+    <IotaClientProvider networks={networkConfig} defaultNetwork={currentNetwork}>
       <IotaWalletProvider>
         <WalletContextProvider>
           {children}

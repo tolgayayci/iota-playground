@@ -14,7 +14,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { WalletStatus } from '@/components/WalletStatus';
 import { CompilerView } from '@/components/views/CompilerView';
 import { ModuleInterfaceView } from '@/components/views/ModuleInterfaceView';
-import { PTBBuilderView } from '@/components/views/PTBBuilderView';
+import { PTBBuilderV3 } from '@/components/views/PTBBuilderV3';
 import { DebugPanel } from '@/components/debug/DebugPanel';
 import { cn } from '@/lib/utils';
 import { SEO } from '@/components/seo/SEO';
@@ -33,7 +33,7 @@ export function EditorPage() {
   const { user } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [isCompiling, setIsCompiling] = useState(false);
-  const [activeViews, setActiveViews] = useState<ViewId[]>(['editor', 'abi', 'console']);
+  const [activeViews, setActiveViews] = useState<ViewId[]>(['abi', 'ptb', 'console']);
   const [lastCompilationResult, setLastCompilationResult] = useState<CompilationResult | null>(null);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
@@ -521,8 +521,9 @@ export function EditorPage() {
 
           {hasPTB && (
             <div style={{ width: getMainPanelWidth() }} className="h-full overflow-hidden p-2">
-              <PTBBuilderView 
+              <PTBBuilderV3 
                 projectId={project.id}
+                deployedPackageId={project.package_id}
               />
             </div>
           )}

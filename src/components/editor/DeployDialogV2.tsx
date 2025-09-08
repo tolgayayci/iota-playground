@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -55,6 +55,7 @@ import { fromB64 } from '@iota/iota-sdk/utils';
 import { IotaClient, getFullnodeUrl } from '@iota/iota-sdk/client';
 import { BytecodeInspector } from './BytecodeInspector';
 import { BytecodeVerification } from './BytecodeVerification';
+import { WalletConnectionDialog } from '@/components/WalletConnectionDialog';
 
 interface DeploymentResult {
   success: boolean;
@@ -105,11 +106,16 @@ export function DeployDialogV2({
   const [simulationResult, setSimulationResult] = useState<any>(null);
   // Initialize selected wallet type based on current wallet connection
   const [selectedWalletType, setSelectedWalletType] = useState<'playground' | 'external'>(() => {
+    // Always prefer the current wallet type
+    if (walletType === 'playground') return 'playground';
+    if (walletType === 'external') return 'external';
+    // Fallback based on connection status
     if (isPlaygroundConnected) return 'playground';
     if (isExternalConnected) return 'external';
     return network === 'testnet' ? 'playground' : 'external';
   });
-  const [selectedNetwork, setSelectedNetwork] = useState<'testnet' | 'mainnet'>(network);
+  // Always use network from context to stay in sync
+  const selectedNetwork = network;
   const [publishData, setPublishData] = useState<PublishData | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [deploymentStep, setDeploymentStep] = useState(0);
@@ -117,20 +123,55 @@ export function DeployDialogV2({
   const [showBytecode, setShowBytecode] = useState(false);
   const [simulationNetwork, setSimulationNetwork] = useState<'testnet' | 'mainnet'>('testnet');
   const [showWalletDialog, setShowWalletDialog] = useState(false);
+  const [showWalletConnectionDialog, setShowWalletConnectionDialog] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<string | null>(null);
+  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   
   const { toast } = useToast();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
   const { mutate: connectWallet } = useConnectWallet();
+  // Fetch wallet balance
+  const fetchWalletBalance = useCallback(async () => {
+    const address = selectedWalletType === 'playground' ? playgroundAddress : currentAccount?.address;
+    if (!address) {
+      setWalletBalance(null);
+      return;
+    }
+    
+    setIsLoadingBalance(true);
+    try {
+      const client = new IotaClient({ url: getFullnodeUrl(network) });
+      const balance = await client.getBalance({ owner: address });
+      const totalBalance = BigInt(balance.totalBalance || '0');
+      const balanceInIota = (Number(totalBalance) / 1000000000).toFixed(4);
+      setWalletBalance(balanceInIota);
+    } catch (error) {
+      console.error('Failed to fetch balance:', error);
+      setWalletBalance(null);
+    } finally {
+      setIsLoadingBalance(false);
+    }
+  }, [selectedWalletType, playgroundAddress, currentAccount?.address, network]);
+
   // Load publish data and sync wallet type when dialog opens
   useEffect(() => {
     if (open) {
-      // Sync wallet type with actual wallet state
-      if (isPlaygroundConnected) {
+      // Fetch balance when dialog opens
+      fetchWalletBalance();
+      // Always sync with current wallet type
+      if (walletType === 'playground') {
         setSelectedWalletType('playground');
-      } else if (isExternalConnected) {
+      } else if (walletType === 'external') {
         setSelectedWalletType('external');
       } else if (network === 'mainnet') {
         setSelectedWalletType('external'); // Mainnet requires external
+      } else {
+        // Default to playground for testnet
+        setSelectedWalletType('playground');
+        if (network === 'testnet' && !isPlaygroundConnected && !isExternalConnected) {
+          // Auto-connect playground wallet for testnet if no wallet connected
+          connectPlaygroundWallet();
+        }
       }
       
       // Load publish data if compilation successful
@@ -138,14 +179,21 @@ export function DeployDialogV2({
         loadPublishData();
       }
     }
-  }, [open, lastCompilation, selectedNetwork, isPlaygroundConnected, isExternalConnected, network]);
+  }, [open, lastCompilation, walletType, network, fetchWalletBalance]);
+  
+  // Fetch balance when wallet or network changes
+  useEffect(() => {
+    if (open) {
+      fetchWalletBalance();
+    }
+  }, [selectedWalletType, currentAccount, playgroundAddress, network, fetchWalletBalance]);
 
   const loadPublishData = async () => {
     if (!lastCompilation?.success) return;
     
     setIsLoadingData(true);
     try {
-      const data = await preparePublishTransaction(projectId, selectedNetwork);
+      const data = await preparePublishTransaction(projectId, network);
       setPublishData(data);
     } catch (error) {
       console.error('Failed to load publish data:', error);
@@ -188,6 +236,18 @@ export function DeployDialogV2({
   };
 
   const handleConnectExternalWallet = () => {
+    // Check if any wallets are installed
+    if (!availableWallets || availableWallets.length === 0) {
+      toast({
+        title: "❌ No IOTA Wallet Detected",
+        description: "Please install the IOTA Wallet extension to continue with external wallet deployment.",
+        variant: "destructive",
+      });
+      // Open wallet installation guide in new tab
+      window.open('https://www.iota.org/products/wallet', '_blank');
+      return;
+    }
+    
     const firstWallet = availableWallets[0];
     if (firstWallet) {
       connectWallet(
@@ -211,12 +271,13 @@ export function DeployDialogV2({
     }
   };
 
-  const handleNetworkChange = (newNetwork: 'testnet' | 'mainnet') => {
-    setSelectedNetwork(newNetwork);
-    switchNetwork(newNetwork);
-    // Reload publish data for new network
-    if (lastCompilation?.success) {
-      loadPublishData();
+  const handleNetworkSwitch = () => {
+    // For external wallets, show instructions to switch in wallet
+    if (selectedWalletType === 'external') {
+      toast({
+        title: "Network Switch Required",
+        description: "Please switch the network in your IOTA Wallet extension to match the selected network.",
+      });
     }
   };
 
@@ -383,11 +444,21 @@ export function DeployDialogV2({
     // Make sure we have publish data loaded
     if (!publishData) {
       toast({
-        title: "Loading Contract Data",
+        title: "⏳ Loading Contract Data",
         description: "Please wait for contract data to load.",
       });
       // Try to load publish data if not already loaded
       await loadPublishData();
+      return;
+    }
+    
+    // Check if playground wallet is connected
+    if (!isPlaygroundConnected) {
+      toast({
+        title: "❌ Wallet Not Connected",
+        description: "Connecting playground wallet...",
+      });
+      await connectPlaygroundWallet();
       return;
     }
 
@@ -416,18 +487,40 @@ export function DeployDialogV2({
         setDeploymentStep(5);
         setDeploymentResult(result);
         toast({
-          title: "Deployment Successful",
+          title: "✅ Deployment Successful",
           description: `Package deployed with ID: ${result.packageId}`,
         });
         onDeploySuccess?.();
       } else {
-        throw new Error(result.error || 'Deployment failed');
+        // Handle specific error cases
+        const errorMsg = result.error || 'Deployment failed';
+        if (errorMsg.toLowerCase().includes('insufficient')) {
+          throw new Error('Insufficient gas for deployment. Please ensure your wallet has enough IOTA.');
+        } else if (errorMsg.toLowerCase().includes('network')) {
+          throw new Error('Network error. Please check your connection and try again.');
+        } else if (errorMsg.toLowerCase().includes('compilation')) {
+          throw new Error('Contract compilation error. Please fix compilation errors first.');
+        } else {
+          throw new Error(errorMsg);
+        }
       }
     } catch (error) {
       console.error('Deployment error:', error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to deploy contract";
+      
+      // Show specific error icon based on error type
+      let title = "❌ Deployment Failed";
+      if (errorMessage.toLowerCase().includes('insufficient')) {
+        title = "💰 Insufficient Gas";
+      } else if (errorMessage.toLowerCase().includes('network')) {
+        title = "🌐 Network Error";
+      } else if (errorMessage.toLowerCase().includes('rejected')) {
+        title = "🚫 Transaction Rejected";
+      }
+      
       toast({
-        title: "Deployment Failed",
-        description: error instanceof Error ? error.message : "Failed to deploy contract",
+        title,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -463,6 +556,12 @@ export function DeployDialogV2({
       });
       return;
     }
+    
+    // Show network reminder for external wallets
+    toast({
+      title: "🔍 Network Check",
+      description: `Deploying to ${network.toUpperCase()}. Ensure your wallet is on the same network.`,
+    });
 
     setIsDeploying(true);
     setDeploymentStep(0);
@@ -581,7 +680,7 @@ export function DeployDialogV2({
             if (result.digest) {
               console.log('📦 Querying full transaction details from blockchain using digest:', result.digest);
               try {
-                const client = new IotaClient({ url: getFullnodeUrl(selectedNetwork) });
+                const client = new IotaClient({ url: getFullnodeUrl(network) });
                 const txDetails = await client.getTransactionBlock({
                   digest: result.digest,
                   options: {
@@ -701,7 +800,7 @@ export function DeployDialogV2({
               success: true,
               packageId: packageId || 'unknown',
               transactionDigest: result.digest,
-              explorerUrl: selectedNetwork === 'testnet'
+              explorerUrl: network === 'testnet'
                 ? `https://explorer.iota.org/txblock/${result.digest}?network=testnet`
                 : `https://explorer.iota.org/txblock/${result.digest}?network=mainnet`,
               gasUsed: result.effects?.gasUsed?.computationCost,
@@ -760,7 +859,7 @@ export function DeployDialogV2({
                   package_id: deploymentId,
                   module_address: deploymentId,
                   module_name: 'external_deployment', // This identifies it as external wallet
-                  network: selectedNetwork,
+                  network: network,
                   abi: abiWithMetadata,
                   transaction_hash: result.digest,
                   gas_used: parseInt(result.effects?.gasUsed?.computationCost || '0')
@@ -793,7 +892,7 @@ export function DeployDialogV2({
                         projectId,
                         packageId,
                         transactionDigest: result.digest,
-                        network: selectedNetwork,
+                        network: network,
                         abi: abiWithMetadata, // Send abi with metadata
                         gasUsed: result.effects?.gasUsed?.computationCost,
                         userId: user.id
@@ -815,7 +914,7 @@ export function DeployDialogV2({
                   
                   // Trigger refresh of deployments in ModuleInterfaceView
                   window.dispatchEvent(new CustomEvent('deployment-completed', { 
-                    detail: { packageId, network: selectedNetwork }
+                    detail: { packageId, network: network }
                   }));
                 }
 
@@ -872,9 +971,26 @@ export function DeployDialogV2({
         },
         onError: (error) => {
           console.error('Deployment error:', error);
+          
+          // Check if error might be due to network mismatch
+          let errorMessage = error.message || "Failed to deploy contract";
+          let errorTitle = "Deployment Failed";
+          
+          // Common network mismatch error patterns
+          if (errorMessage.toLowerCase().includes('network') || 
+              errorMessage.toLowerCase().includes('chain') ||
+              errorMessage.toLowerCase().includes('mismatch')) {
+            errorTitle = "🔗 Network Mismatch Detected";
+            errorMessage = `Your wallet might be on the wrong network. Please switch to ${network} in your IOTA Wallet and try again.`;
+          } else if (errorMessage.toLowerCase().includes('rejected') || 
+                     errorMessage.toLowerCase().includes('denied')) {
+            errorTitle = "❌ Transaction Rejected";
+            errorMessage = "The transaction was rejected. This might happen if your wallet is on a different network.";
+          }
+          
           toast({
-            title: "Deployment Failed",
-            description: error.message || "Failed to deploy contract",
+            title: errorTitle,
+            description: errorMessage,
             variant: "destructive",
           });
           setIsDeploying(false);
@@ -1071,18 +1187,18 @@ export function DeployDialogV2({
                   {/* Auto-detect wallet or show options */}
                   {currentAccount ? (
                     // External wallet is connected
-                    <div className="rounded-lg border bg-gradient-to-r from-primary/5 to-primary/10 p-4">
+                    <div className="rounded-lg border-2 border-green-500/30 bg-gradient-to-r from-green-500/5 via-green-500/10 to-emerald-500/5 p-4">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <div className="p-2 rounded-full bg-primary/10">
-                            <Wallet className="h-4 w-4 text-primary" />
+                          <div className="p-2 rounded-full bg-green-500/20">
+                            <Wallet className="h-4 w-4 text-green-600 dark:text-green-500" />
                           </div>
                           <div>
-                            <p className="font-medium">External Wallet Connected</p>
-                            <p className="text-xs text-muted-foreground">Ready to deploy</p>
+                            <p className="font-medium text-green-900 dark:text-green-100">External Wallet Connected</p>
+                            <p className="text-xs text-green-700 dark:text-green-400">Ready to deploy to {network}</p>
                           </div>
                         </div>
-                        <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+                        <Badge className="bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30 font-semibold">
                           <CheckCircle className="h-3 w-3 mr-1" />
                           Connected
                         </Badge>
@@ -1106,24 +1222,108 @@ export function DeployDialogV2({
                           </div>
                         </div>
                         <div className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">Network</span>
+                          <span className="text-muted-foreground">Balance</span>
+                          <div className="flex items-center gap-2">
+                            {isLoadingBalance ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Badge variant="outline" className="font-mono text-xs">
+                                <Coins className="h-3 w-3 mr-1" />
+                                {walletBalance || '0.0000'} IOTA
+                              </Badge>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 p-0"
+                              onClick={fetchWalletBalance}
+                              title="Refresh balance"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Wallet Network</span>
                           <Badge variant={network === 'mainnet' ? 'destructive' : 'secondary'}>
                             {network}
                           </Badge>
                         </div>
                       </div>
+                      
+                      {/* Network Warning for External Wallets */}
+                      <Alert className="mt-3 border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
+                        <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+                        <AlertDescription className="text-sm">
+                          <p className="font-medium text-amber-800 dark:text-amber-300 mb-1">Network Verification Required</p>
+                          <p className="text-amber-700 dark:text-amber-400 text-xs mb-2">
+                            Your app is set to <strong className="text-amber-800 dark:text-amber-200">{network}</strong>. Please ensure your IOTA Wallet is on the same network.
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-7 border-amber-500/50 hover:bg-amber-100 dark:hover:bg-amber-900"
+                              onClick={() => {
+                                // Try to open wallet extension settings
+                                // This will open the extension popup which usually shows current network
+                                toast({
+                                  title: "Check Your Wallet",
+                                  description: "Please verify and switch network in your IOTA Wallet extension if needed.",
+                                });
+                                // Attempt to trigger a benign wallet interaction to open it
+                                if (currentAccount) {
+                                  // This might open the wallet popup
+                                  window.dispatchEvent(new CustomEvent('wallet-check-network'));
+                                }
+                              }}
+                            >
+                              <ExternalLink className="h-3 w-3 mr-1" />
+                              Open Wallet
+                            </Button>
+                            <span className="text-xs text-amber-600 dark:text-amber-400">→ Switch to {network}</span>
+                          </div>
+                        </AlertDescription>
+                      </Alert>
+                      
+                      {/* Change Wallet Button */}
+                      <div className="mt-3 pt-3 border-t">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => setShowWalletConnectionDialog(true)}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Change Wallet
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     // No external wallet - show wallet options
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-3">
+                      {/* No Wallet Alert */}
+                      {!isPlaygroundConnected && !isExternalConnected && (
+                        <Alert className="border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
+                          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+                          <AlertDescription className="text-sm text-amber-800 dark:text-amber-300">
+                            Select a wallet option below to proceed with deployment
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      
+                      <div className="grid grid-cols-2 gap-3">
                       {/* Playground Wallet Option */}
                       <button
                         onClick={() => handleWalletTypeChange('playground')}
+                        disabled={network === 'mainnet'}
                         className={cn(
-                          "relative rounded-lg border-2 p-4 text-left transition-all hover:shadow-md",
+                          "relative rounded-lg border-2 p-4 text-left transition-all",
                           selectedWalletType === 'playground' 
-                            ? "border-primary bg-primary/5" 
-                            : "border-muted hover:border-muted-foreground/50"
+                            ? "border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20" 
+                            : network === 'mainnet'
+                            ? "border-muted bg-muted/30 opacity-50 cursor-not-allowed"
+                            : "border-muted hover:border-blue-400 hover:shadow-md hover:bg-blue-50/50 dark:hover:bg-blue-950/20"
                         )}
                       >
                         {selectedWalletType === 'playground' && (
@@ -1132,17 +1332,27 @@ export function DeployDialogV2({
                           </div>
                         )}
                         <div className="space-y-2">
-                          <div className="p-2 bg-primary/10 rounded-lg w-fit">
-                            <TestTube className="h-5 w-5 text-primary" />
+                          <div className={cn(
+                            "p-2 rounded-lg w-fit",
+                            selectedWalletType === 'playground' ? "bg-blue-500/20" : "bg-blue-500/10"
+                          )}>
+                            <TestTube className={cn(
+                              "h-5 w-5",
+                              network === 'mainnet' ? "text-muted-foreground" : "text-blue-600 dark:text-blue-500"
+                            )} />
                           </div>
                           <div>
-                            <p className="font-medium">Playground Wallet</p>
+                            <p className={cn(
+                              "font-medium",
+                              network === 'mainnet' ? "text-muted-foreground" : ""
+                            )}>Playground Wallet</p>
                             <p className="text-xs text-muted-foreground mt-1">
-                              Deploy instantly with built-in testnet wallet
+                              {network === 'mainnet' ? "Not available on mainnet" : "Zero-config testnet deployment"}
                             </p>
                           </div>
                           {network === 'mainnet' && (
-                            <Badge variant="outline" className="text-xs">
+                            <Badge variant="destructive" className="text-xs">
+                              <AlertCircle className="h-3 w-3 mr-1" />
                               Testnet only
                             </Badge>
                           )}
@@ -1153,10 +1363,10 @@ export function DeployDialogV2({
                       <button
                         onClick={() => handleWalletTypeChange('external')}
                         className={cn(
-                          "relative rounded-lg border-2 p-4 text-left transition-all hover:shadow-md",
+                          "relative rounded-lg border-2 p-4 text-left transition-all",
                           selectedWalletType === 'external' 
-                            ? "border-primary bg-primary/5" 
-                            : "border-muted hover:border-muted-foreground/50"
+                            ? "border-purple-500 bg-purple-500/10 shadow-lg shadow-purple-500/20" 
+                            : "border-muted hover:border-purple-400 hover:shadow-md hover:bg-purple-50/50 dark:hover:bg-purple-950/20"
                         )}
                       >
                         {selectedWalletType === 'external' && (
@@ -1165,60 +1375,129 @@ export function DeployDialogV2({
                           </div>
                         )}
                         <div className="space-y-2">
-                          <div className="p-2 bg-secondary/50 rounded-lg w-fit">
-                            <Wallet className="h-5 w-5 text-secondary-foreground" />
+                          <div className={cn(
+                            "p-2 rounded-lg w-fit",
+                            selectedWalletType === 'external' ? "bg-purple-500/20" : "bg-purple-500/10"
+                          )}>
+                            <Wallet className="h-5 w-5 text-purple-600 dark:text-purple-500" />
                           </div>
                           <div>
                             <p className="font-medium">External Wallet</p>
                             <p className="text-xs text-muted-foreground mt-1">
-                              Connect your IOTA wallet for full control
+                              Use your wallet for {network} deployment
                             </p>
                           </div>
+                          {network === 'mainnet' && (
+                            <Badge className="text-xs bg-amber-500/10 text-amber-700 dark:text-amber-500 border-amber-500/20">
+                              <Zap className="h-3 w-3 mr-1" />
+                              Mainnet ready
+                            </Badge>
+                          )}
                         </div>
                       </button>
+                    </div>
                     </div>
                   )}
 
                   {/* Connect Button if needed */}
                   {!currentAccount && selectedWalletType === 'external' && (
-                    <Button 
-                      variant="default" 
-                      className="w-full"
-                      onClick={handleConnectWallet}
-                    >
-                      <Wallet className="mr-2 h-4 w-4" />
-                      Connect External Wallet
-                    </Button>
+                    <>
+                      {availableWallets.length === 0 && (
+                        <Alert className="border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
+                          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+                          <AlertDescription className="text-sm">
+                            <div className="space-y-2">
+                              <p className="font-medium text-amber-800 dark:text-amber-300">No wallet extension detected</p>
+                              <p className="text-amber-700 dark:text-amber-400 text-xs">
+                                Install the IOTA Wallet extension to deploy with your own wallet.
+                              </p>
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      <Button 
+                        variant="default" 
+                        className="w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white shadow-lg shadow-purple-500/25"
+                        onClick={handleConnectWallet}
+                      >
+                        <Wallet className="mr-2 h-4 w-4" />
+                        {availableWallets.length > 0 ? 'Connect IOTA Wallet' : 'Install Wallet Extension'}
+                      </Button>
+                    </>
                   )}
 
                   {/* Playground wallet info */}
-                  {selectedWalletType === 'playground' && !currentAccount && (
-                    <div className="rounded-lg border bg-gradient-to-r from-primary/5 to-primary/10 p-4">
+                  {selectedWalletType === 'playground' && !currentAccount && network === 'testnet' && (
+                    <div className="rounded-lg border bg-card p-4">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <div className="p-2 rounded-full bg-primary/10">
+                          <div className="p-2 rounded-lg bg-primary/10">
                             <TestTube className="h-4 w-4 text-primary" />
                           </div>
                           <div>
                             <p className="font-medium">Playground Wallet</p>
-                            <p className="text-xs text-muted-foreground">Testnet deployment ready</p>
+                            <p className="text-xs text-muted-foreground">Pre-funded testnet wallet</p>
                           </div>
                         </div>
-                        <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Ready
+                        <Badge variant="secondary" className="gap-1">
+                          <CheckCircle className="h-3 w-3 text-green-500" />
+                          Active
                         </Badge>
                       </div>
                       
                       <div className="space-y-2 mt-3">
                         <div className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">Type</span>
-                          <Badge variant="secondary">Built-in Testnet Wallet</Badge>
+                          <span className="text-muted-foreground">Address</span>
+                          <code className="text-xs font-mono">
+                            {playgroundAddress ? `${playgroundAddress.slice(0, 8)}...${playgroundAddress.slice(-6)}` : 'Loading...'}
+                          </code>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Balance</span>
+                          <div className="flex items-center gap-2">
+                            {isLoadingBalance ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Badge variant="secondary" className="font-mono text-xs">
+                                <Coins className="h-3 w-3 mr-1" />
+                                {walletBalance || '0.0000'} IOTA
+                              </Badge>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 p-0"
+                              onClick={fetchWalletBalance}
+                              title="Refresh balance"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </div>
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-muted-foreground">Network</span>
-                          <Badge variant="secondary">testnet</Badge>
+                          <Badge variant="outline" className="text-xs">{network}</Badge>
                         </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Features</span>
+                          <div className="flex gap-1">
+                            <Badge variant="secondary" className="text-xs">Zero gas</Badge>
+                            <Badge variant="secondary" className="text-xs">Auto-funded</Badge>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Change Wallet Button */}
+                      <div className="mt-3 pt-3 border-t">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => setShowWalletConnectionDialog(true)}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Change Wallet
+                        </Button>
                       </div>
                     </div>
                   )}
@@ -1228,33 +1507,54 @@ export function DeployDialogV2({
                 {lastCompilation?.success && publishData && (
                     <div className="rounded-lg border bg-card">
                       <div className="p-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <Zap className="h-4 w-4 text-blue-500" />
-                          <span className="font-medium">Gas Estimation</span>
-                          <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 border-blue-200">
-                            {selectedNetwork.charAt(0).toUpperCase() + selectedNetwork.slice(1)}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Zap className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">Gas Estimation</span>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {network === 'testnet' ? 'Testnet' : 'Mainnet'}
                           </Badge>
                         </div>
-                        <div className="grid grid-cols-1 gap-2 text-sm">
-                          <div className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/50">
-                            <span className="text-muted-foreground font-medium">Estimated Cost</span>
-                            <span className="font-mono text-xs font-semibold text-blue-600">
-                              {publishData.estimatedCost}
-                            </span>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <span className="text-xs text-muted-foreground">Estimated Cost</span>
+                            <p className="font-mono text-sm font-medium">
+                              {publishData.estimatedCost || '~0.100 IOTA'}
+                            </p>
                           </div>
-                          <div className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/50">
-                            <span className="text-muted-foreground font-medium">Gas Limit</span>
-                            <span className="font-mono text-xs">
-                              {(publishData.gasEstimate / 1000000000).toFixed(3)} IOTA
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/50">
-                            <span className="text-muted-foreground font-medium">Modules</span>
-                            <span className="font-mono text-xs">
-                              {publishData.modules.length}
-                            </span>
+                          <div className="space-y-1">
+                            <span className="text-xs text-muted-foreground">Gas Budget</span>
+                            <p className="font-mono text-sm font-medium">
+                              {publishData.gasEstimate ? `${(publishData.gasEstimate / 1000000000).toFixed(3)} IOTA` : '~0.100 IOTA'}
+                            </p>
                           </div>
                         </div>
+                        <div className="mt-3 flex items-center justify-between pt-3 border-t">
+                          <div className="flex items-center gap-2">
+                            <Package className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground">Package contains {publishData.modules.length} module{publishData.modules.length !== 1 ? 's' : ''}</span>
+                          </div>
+                          {selectedWalletType === 'playground' && network === 'testnet' && (
+                            <Badge variant="secondary" className="text-xs gap-1">
+                              <CheckCircle className="h-3 w-3 text-green-500" />
+                              Free
+                            </Badge>
+                          )}
+                        </div>
+                        {selectedWalletType === 'external' && (
+                          <div className="mt-3 p-2 bg-amber-50/50 dark:bg-amber-950/20 rounded text-xs text-amber-700 dark:text-amber-400">
+                            <div className="flex items-start gap-1">
+                              <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                              <div className="flex-1">
+                                <span>Deploying to <strong className="text-amber-800 dark:text-amber-200">{network.toUpperCase()}</strong></span>
+                                <div className="mt-1 text-[11px] opacity-90">
+                                  ⚠️ Ensure your wallet is on {network} before signing
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1832,7 +2132,18 @@ export function DeployDialogV2({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
+      
+      {/* Wallet Connection Dialog */}
+      <WalletConnectionDialog
+        open={showWalletConnectionDialog}
+        onOpenChange={(open) => {
+          setShowWalletConnectionDialog(open);
+          // Update selected wallet type when dialog closes and wallet has changed
+          if (!open && walletType) {
+            setSelectedWalletType(walletType);
+          }
+        }}
+      />
     </>
   );
 }

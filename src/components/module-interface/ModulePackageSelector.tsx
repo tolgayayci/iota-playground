@@ -24,8 +24,9 @@ import { Deployment } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BLOCKCHAIN_CONFIG } from '@/lib/config';
+import { supabase } from '@/lib/supabase';
 
 interface ModulePackageSelectorProps {
   contractAddress: string;
@@ -55,8 +56,8 @@ export function ModulePackageSelector({
   };
 
   const handleCopyCode = async () => {
-    if (!selectedDeployment) return;
-    await navigator.clipboard.writeText(selectedDeployment.deployed_code);
+    if (!selectedDeployment?.source_code) return;
+    await navigator.clipboard.writeText(selectedDeployment.source_code);
     toast({
       title: "Copied",
       description: "Module code copied to clipboard",
@@ -189,7 +190,7 @@ export function ModulePackageSelector({
                   "p-4 text-sm font-mono leading-relaxed",
                   "bg-muted/20 dark:bg-muted/5"
                 )}>
-                  <code>{selectedDeployment?.deployed_code}</code>
+                  <code>{selectedDeployment?.source_code || 'No source code available for this deployment.'}</code>
                 </pre>
               </ScrollArea>
             </div>

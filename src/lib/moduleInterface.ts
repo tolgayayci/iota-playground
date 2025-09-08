@@ -124,15 +124,32 @@ function convertNormalizedFunction(
   // If it has TxContext and no return values, or matches entry patterns, it's likely an entry function
   const shouldBeEntry = isEntry || (hasTxContext && returnTypes.length === 0) || isLikelyEntry;
 
+  // Map visibility correctly
+  let visibility: 'public' | 'entry' | 'private' | 'friend' = 'public';
+  if (func.visibility === 'Private') visibility = 'private';
+  else if (func.visibility === 'Friend') visibility = 'friend';
+  else if (shouldBeEntry) visibility = 'entry';
+
+  // Extract type parameters
+  const typeParameters = func.typeParameters?.map((tp: any, idx: number) => `T${idx}`) || [];
+  
+  // Format return type for display
+  const returnType = returnTypes.length > 0 
+    ? returnTypes.map(t => normalizedTypeToString(t)).join(', ')
+    : undefined;
+
   return {
     name,
     type: shouldBeEntry ? 'entry' : 'public',
-    visibility: func.visibility?.toLowerCase() as 'public' | 'private' || 'public',
+    visibility,
     is_entry: shouldBeEntry,
     module: moduleName,
     inputs,
     outputs: outputs.length > 0 ? outputs : undefined,
     parameters: inputs, // For backward compatibility
+    returnType,
+    typeParameters: typeParameters.length > 0 ? typeParameters : undefined,
+    isMut: hasTxContext, // Functions with TxContext usually mutate state
   };
 }
 

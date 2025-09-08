@@ -1,0 +1,267 @@
+import { useState, useEffect, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
+import { 
+  Plus,
+  ChevronDown,
+  ChevronRight,
+  Zap,
+  ArrowDown,
+  AlertCircle,
+  CheckCircle,
+  Loader2,
+  BookOpen,
+} from 'lucide-react';
+import { PTBCommand } from '@/components/views/PTBBuilderV3';
+import { PTBCommandNode } from './PTBCommandNode';
+import { PTBAddCommandModal } from './PTBAddCommandModal';
+import { generateAutoReferences, validateCommandReferences } from '@/lib/ptb-utils';
+
+interface PTBCommandFlowProps {
+  commands: PTBCommand[];
+  onCommandsChange: (commands: PTBCommand[]) => void;
+  modules: any[];
+  selectedPackage: string;
+  isLoading?: boolean;
+  onShowTemplates?: () => void;
+}
+
+export function PTBCommandFlow({
+  commands,
+  onCommandsChange,
+  modules,
+  selectedPackage,
+  isLoading,
+  onShowTemplates
+}: PTBCommandFlowProps) {
+  const [expandedCommands, setExpandedCommands] = useState<Set<string>>(new Set());
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addingAtIndex, setAddingAtIndex] = useState<number>(0);
+  const [validationErrors, setValidationErrors] = useState<Map<string, string[]>>(new Map());
+  const flowRef = useRef<HTMLDivElement>(null);
+
+  // Auto-validate commands when they change
+  useEffect(() => {
+    const errors = new Map<string, string[]>();
+    commands.forEach((command, index) => {
+      const commandErrors = validateCommandReferences(command, commands.slice(0, index));
+      if (commandErrors.length > 0) {
+        errors.set(command.id, commandErrors);
+      }
+    });
+    setValidationErrors(errors);
+  }, [commands]);
+
+  const handleAddCommand = (newCommand: PTBCommand) => {
+    // Auto-generate references based on previous commands
+    const enhancedCommand = generateAutoReferences(newCommand, commands.slice(0, addingAtIndex));
+    const updatedCommands = [...commands];
+    updatedCommands.splice(addingAtIndex, 0, { ...enhancedCommand, id: Date.now().toString() });
+    onCommandsChange(updatedCommands);
+    setShowAddModal(false);
+  };
+
+  const openAddModal = (index: number) => {
+    setAddingAtIndex(index);
+    setShowAddModal(true);
+  };
+
+  const handleUpdateCommand = (id: string, updatedCommand: PTBCommand) => {
+    const index = commands.findIndex(cmd => cmd.id === id);
+    if (index !== -1) {
+      // Auto-update references when command changes
+      const enhancedCommand = generateAutoReferences(updatedCommand, commands.slice(0, index));
+      onCommandsChange(commands.map(cmd => 
+        cmd.id === id ? enhancedCommand : cmd
+      ));
+    }
+  };
+
+  const handleDeleteCommand = (id: string) => {
+    // When deleting, update all subsequent command references
+    const deletedIndex = commands.findIndex(cmd => cmd.id === id);
+    const updatedCommands = commands.filter(cmd => cmd.id !== id);
+    
+    // Adjust references in subsequent commands
+    if (deletedIndex !== -1) {
+      for (let i = deletedIndex; i < updatedCommands.length; i++) {
+        updatedCommands[i] = adjustCommandReferences(updatedCommands[i], deletedIndex);
+      }
+    }
+    
+    onCommandsChange(updatedCommands);
+  };
+
+  const handleMoveCommand = (id: string, direction: 'up' | 'down') => {
+    const index = commands.findIndex(cmd => cmd.id === id);
+    if (index === -1) return;
+    
+    if (direction === 'up' && index > 0) {
+      const newCommands = [...commands];
+      [newCommands[index - 1], newCommands[index]] = [newCommands[index], newCommands[index - 1]];
+      onCommandsChange(newCommands);
+    } else if (direction === 'down' && index < commands.length - 1) {
+      const newCommands = [...commands];
+      [newCommands[index], newCommands[index + 1]] = [newCommands[index + 1], newCommands[index]];
+      onCommandsChange(newCommands);
+    }
+  };
+
+  const toggleCommandExpansion = (id: string) => {
+    const newExpanded = new Set(expandedCommands);
+    if (newExpanded.has(id)) {
+      newExpanded.delete(id);
+    } else {
+      newExpanded.add(id);
+    }
+    setExpandedCommands(newExpanded);
+  };
+
+  const adjustCommandReferences = (command: PTBCommand, deletedIndex: number): PTBCommand => {
+    // Adjust Result(n) references when a command is deleted
+    const updatedCommand = { ...command };
+    
+    // This is a simplified version - in production, you'd need to parse and update
+    // all reference values that point to indices >= deletedIndex
+    
+    return updatedCommand;
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      <ScrollArea className="flex-1">
+        <div className="min-h-full p-4">
+          {/* Initial state when no commands - centered */}
+          {commands.length === 0 && (
+            <div className="min-h-full flex items-center justify-center">
+              <div className="flex flex-col items-center">
+                <div className="p-4 bg-muted/30 rounded-full mb-4">
+                  <Plus className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <h4 className="font-medium mb-2">Start Your PTB</h4>
+                <p className="text-sm text-muted-foreground text-center mb-4 max-w-sm">
+                  Add your first Move call to begin building your programmable transaction
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => openAddModal(0)}
+                    variant="default"
+                    className="gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Move Call
+                  </Button>
+                  {onShowTemplates && (
+                    <Button
+                      onClick={onShowTemplates}
+                      variant="outline"
+                      className="gap-2"
+                    >
+                      <BookOpen className="h-4 w-4" />
+                      Load Template
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+
+          {/* Command Pipeline */}
+          {commands.length > 0 && (
+            <div className="space-y-2">
+
+            {commands.map((command, index) => (
+              <div key={command.id} className="relative">
+                {/* Visual Connection Line */}
+                {index > 0 && (
+                  <div className="absolute left-1/2 -top-2 w-0.5 h-2 bg-border" />
+                )}
+
+                {/* Command Node */}
+                <PTBCommandNode
+                  command={command}
+                  index={index}
+                  isExpanded={expandedCommands.has(command.id)}
+                  validationErrors={validationErrors.get(command.id) || []}
+                  previousCommands={commands.slice(0, index)}
+                  onToggleExpand={() => toggleCommandExpansion(command.id)}
+                  onUpdate={(updated) => handleUpdateCommand(command.id, updated)}
+                  onDelete={() => handleDeleteCommand(command.id)}
+                  onMove={(direction) => handleMoveCommand(command.id, direction)}
+                  modules={modules}
+                  selectedPackage={selectedPackage}
+                />
+
+                {/* Add Command Button Between Nodes */}
+                {index < commands.length - 1 && (
+                  <div className="relative py-2">
+                    <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-border" />
+                    <div className="flex justify-center">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 rounded-full bg-background border hover:bg-primary/10"
+                        onClick={() => openAddModal(index + 1)}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* Add command at end */}
+            {commands.length > 0 && (
+              <div className="pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => openAddModal(commands.length)}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Move Call
+                </Button>
+              </div>
+            )}
+
+              {/* Expand/Collapse All button when there are multiple commands */}
+              {commands.length > 1 && (
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (expandedCommands.size === commands.length) {
+                        setExpandedCommands(new Set());
+                      } else {
+                        setExpandedCommands(new Set(commands.map(c => c.id)));
+                      }
+                    }}
+                  >
+                    {expandedCommands.size === commands.length ? 'Collapse All' : 'Expand All'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+
+      {/* Add Command Modal */}
+      <PTBAddCommandModal
+        open={showAddModal}
+        onOpenChange={setShowAddModal}
+        onSave={handleAddCommand}
+        modules={modules}
+        selectedPackage={selectedPackage}
+        previousCommands={commands.slice(0, addingAtIndex)}
+        isLoadingModules={isLoading}
+      />
+    </div>
+  );
+}

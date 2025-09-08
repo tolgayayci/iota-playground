@@ -49,10 +49,10 @@ router.post('/deploy', deployRateLimiter, async (req, res, next) => {
       
       // Save successful deployment to database
       if (result.success && result.packageId) {
-        // Get the ABI from the compilation result
+        // Get the project data including source code and ABI from the compilation result
         const { data: project } = await supabase
           .from('projects')
-          .select('last_compilation_result')
+          .select('last_compilation_result, code')
           .eq('id', projectId)
           .eq('user_id', userId)
           .single();
@@ -84,7 +84,7 @@ router.post('/deploy', deployRateLimiter, async (req, res, next) => {
           deployerAddress: playgroundInfo.address
         };
         
-        // Save deployment data
+        // Save deployment data including source code
         let deploymentData: any = {
           project_id: projectId,
           user_id: userId,
@@ -95,6 +95,7 @@ router.post('/deploy', deployRateLimiter, async (req, res, next) => {
           abi: abiWithMetadata, // Store abi with metadata
           transaction_hash: result.transactionDigest || '',
           gas_used: parseInt(result.gasUsed || '0'),
+          source_code: project?.code || '', // Store the source code at deployment time
         };
 
         // Save deployment
@@ -170,6 +171,14 @@ router.post('/execute', async (req, res, next) => {
 
     // Save successful deployment to database
     if (result.success && result.packageId) {
+      // Get the project source code to store with deployment
+      const { data: project } = await supabase
+        .from('projects')
+        .select('code')
+        .eq('id', projectId)
+        .eq('user_id', userId)
+        .single();
+
       const { error: dbError } = await supabase
         .from('deployed_contracts')
         .insert({
@@ -182,6 +191,7 @@ router.post('/execute', async (req, res, next) => {
           abi: {},
           transaction_hash: result.transactionDigest || '',
           gas_used: parseInt(result.gasUsed || '0'),
+          source_code: project?.code || '', // Store the source code at deployment time
         });
 
       if (dbError) {
@@ -357,6 +367,14 @@ router.post('/save-external', async (req, res, next) => {
       // Use the verified package ID
       const verifiedPackageId = (publishedPackage as any)?.packageId || packageId;
 
+      // Get the project source code to store with deployment
+      const { data: project } = await supabase
+        .from('projects')
+        .select('code')
+        .eq('id', projectId)
+        .eq('user_id', userId)
+        .single();
+
       // Save to database using upsert
       const { error: dbError } = await supabase
         .from('deployed_contracts')
@@ -369,7 +387,8 @@ router.post('/save-external', async (req, res, next) => {
           network,
           abi: abi || [], // ABI will contain metadata including deployer address
           transaction_hash: transactionDigest,
-          gas_used: parseInt(gasUsed || '0')
+          gas_used: parseInt(gasUsed || '0'),
+          source_code: project?.code || '', // Store the source code at deployment time
         }, {
           onConflict: 'package_id,network',
           ignoreDuplicates: false
@@ -402,6 +421,14 @@ router.post('/save-external', async (req, res, next) => {
       logger.error('Failed to verify transaction:', verifyError);
       
       // Even if verification fails, try to save with provided data
+      // Get the project source code to store with deployment
+      const { data: project } = await supabase
+        .from('projects')
+        .select('code')
+        .eq('id', projectId)
+        .eq('user_id', userId)
+        .single();
+
       const { error: dbError } = await supabase
         .from('deployed_contracts')
         .upsert({
@@ -413,7 +440,8 @@ router.post('/save-external', async (req, res, next) => {
           network,
           abi: abi || [], // ABI will contain metadata including deployer address
           transaction_hash: transactionDigest,
-          gas_used: parseInt(gasUsed || '0')
+          gas_used: parseInt(gasUsed || '0'),
+          source_code: project?.code || '', // Store the source code at deployment time
         }, {
           onConflict: 'package_id,network',
           ignoreDuplicates: false

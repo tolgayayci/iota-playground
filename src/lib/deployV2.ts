@@ -41,6 +41,42 @@ export interface PublishData {
 }
 
 /**
+ * Check if wallet has sufficient gas balance
+ */
+export async function checkGasBalance(
+  address: string, 
+  requiredGas: number,
+  network: 'testnet' | 'mainnet' = 'testnet'
+): Promise<{ hasEnough: boolean; balance: string; required: string }> {
+  try {
+    const client = new IotaClient({
+      url: network === 'testnet' 
+        ? 'https://api.testnet.iota.cafe'
+        : 'https://api.mainnet.iota.cafe'
+    });
+    
+    // Get balance for the address
+    const balance = await client.getBalance({ owner: address });
+    const totalBalance = BigInt(balance.totalBalance || '0');
+    const requiredBigInt = BigInt(requiredGas);
+    
+    return {
+      hasEnough: totalBalance >= requiredBigInt,
+      balance: (Number(totalBalance) / 1000000000).toFixed(4) + ' IOTA',
+      required: (requiredGas / 1000000000).toFixed(4) + ' IOTA'
+    };
+  } catch (error) {
+    console.error('Failed to check gas balance:', error);
+    // Return optimistic result if check fails
+    return {
+      hasEnough: true,
+      balance: 'Unknown',
+      required: (requiredGas / 1000000000).toFixed(4) + ' IOTA'
+    };
+  }
+}
+
+/**
  * Prepare publish transaction data for client-side signing
  */
 export async function preparePublishTransaction(
@@ -103,7 +139,18 @@ export async function deployWithPlaygroundWallet(
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.message || 'Deployment failed');
+      const errorMessage = error.message || error.error || 'Deployment failed';
+      
+      // Parse specific error types
+      if (errorMessage.includes('InsufficientGas') || errorMessage.includes('insufficient gas')) {
+        throw new Error('Insufficient gas for deployment. The playground wallet may need funding.');
+      } else if (errorMessage.includes('ObjectNotFound')) {
+        throw new Error('Required objects not found. Please ensure all dependencies are available.');
+      } else if (errorMessage.includes('InvalidTransaction')) {
+        throw new Error('Invalid transaction. Please check your contract code.');
+      } else {
+        throw new Error(errorMessage);
+      }
     }
 
     const result = await response.json();

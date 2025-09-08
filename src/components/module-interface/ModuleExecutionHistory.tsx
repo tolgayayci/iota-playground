@@ -71,31 +71,33 @@ export function ModuleExecutionHistory({ projectId, selectedDeployment }: Module
       setIsLoading(true);
       console.log('Fetching execution history for project:', projectId, 'deployment:', selectedDeployment?.package_id);
       
-      let query = supabase
+      const { data, error } = await supabase
         .from('ptb_history')
         .select('*')
         .eq('project_id', projectId)
         .order('created_at', { ascending: sortOrder === 'asc' });
-
-      // Filter by deployment if selected
-      if (selectedDeployment?.package_id) {
-        console.log('Filtering by packageId:', selectedDeployment.package_id);
-        query = query.eq('ptb_config->packageId', selectedDeployment.package_id);
-      }
-
-      const { data, error } = await query;
 
       if (error) {
         console.error('Database error fetching execution history:', error);
         throw error;
       }
       
-      console.log('Fetched execution history:', data?.length || 0, 'records');
-      if (data && data.length > 0) {
-        console.log('Sample ptb_config:', data[0].ptb_config);
+      // Filter by deployment package_id on the client side
+      let filteredData = data || [];
+      if (selectedDeployment?.package_id) {
+        console.log('Filtering by packageId:', selectedDeployment.package_id);
+        filteredData = filteredData.filter(call => 
+          call.ptb_config?.packageId === selectedDeployment.package_id ||
+          call.ptb_config?.deploymentId === selectedDeployment.package_id
+        );
       }
       
-      setCalls(data || []);
+      console.log('Fetched execution history:', filteredData.length, 'records');
+      if (filteredData.length > 0) {
+        console.log('Sample ptb_config:', filteredData[0].ptb_config);
+      }
+      
+      setCalls(filteredData);
     } catch (error) {
       console.error('Error fetching execution history:', error);
     } finally {
