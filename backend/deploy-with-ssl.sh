@@ -34,9 +34,11 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Set deployment directory
-DEPLOY_DIR="/root/iota-playground/backend"
+# Set deployment directory - use current directory
+DEPLOY_DIR="$(pwd)"
 WIZARD_DIR="/root/wizard/backend"
+
+print_status "Running from directory: $DEPLOY_DIR"
 
 # Step 1: Create the proxy network if it doesn't exist
 print_status "Creating Docker proxy network..."
