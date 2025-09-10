@@ -294,8 +294,7 @@ export function ObjectIdInput({
   const handleObjectSelect = (objectId: string) => {
     onChange(objectId);
     setShowObjectBrowser(false);
-    // Trigger verification for the selected object
-    verifyObject(objectId);
+    // Trigger verification for the selected object will happen via useEffect
   };
 
   return (
@@ -322,7 +321,7 @@ export function ObjectIdInput({
           </div>
         </div>
         
-        {/* Browse button */}
+        {/* Packages button */}
         <Button
           variant="outline"
           size="sm"
@@ -331,7 +330,7 @@ export function ObjectIdInput({
           className="gap-1.5"
         >
           <FolderOpen className="h-4 w-4" />
-          Browse
+          Packages
         </Button>
       </div>
 
@@ -497,7 +496,7 @@ export function ObjectIdInput({
         </div>
       )}
       
-      {/* Object Browser Modal */}
+      {/* Object Packages Modal */}
       <ObjectBrowser
         open={showObjectBrowser}
         onOpenChange={setShowObjectBrowser}

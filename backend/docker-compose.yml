@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  iota-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iota-playground-backend
+    restart: unless-stopped
+    ports:
+      - "8081:3001"  # Internal API port (different from Wizard's 8080)
+      - "8443:8443"  # HTTPS port for api.iotaplay.app
+      - "80:80"      # HTTP port for Let's Encrypt challenge
+    volumes:
+      # Persistent storage for user projects
+      - ./projects:/app/projects
+      # SSL certificates
+      - /etc/letsencrypt:/etc/letsencrypt
+      # Logs
+      - ./logs:/var/log
+      # Environment file
+      - ./.env:/app/.env:ro
+    environment:
+      # Server configuration
+      - NODE_ENV=production
+      - PORT=3001
+      - HOST=0.0.0.0
+      
+      # Domain configuration
+      - DOMAIN=api.iotaplay.app
+      - EMAIL=tolga+iotaplay@yk-labs.com
+      
+      # Database (from .env file)
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      
+      # IOTA configuration
+      - IOTA_NODE_URL=${IOTA_NODE_URL:-https://api.testnet.iota.cafe}
+      - IOTA_NETWORK=${IOTA_NETWORK:-testnet}
+      - PLAYGROUND_WALLET_PRIVATE_KEY=${PLAYGROUND_WALLET_PRIVATE_KEY}
+      
+      # Move compiler
+      - MOVE_COMPILER_PATH=/usr/local/bin/iota
+      - COMPILER_WORKSPACE=/app/projects
+      
+      # Security
+      - JWT_SECRET=${JWT_SECRET}
+      - API_KEY=${API_KEY}
+      
+      # Rate limiting
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-900000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    networks:
+      - iota-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  iota-network:
+    driver: bridge
+
+# Volumes for persistent data
+volumes:
+  projects:
+    driver: local
+  letsencrypt:
+    driver: local
+  logs:
+    driver: local

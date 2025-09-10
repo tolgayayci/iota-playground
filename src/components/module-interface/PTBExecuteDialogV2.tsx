@@ -462,10 +462,26 @@ export function PTBExecuteDialogV2({
       if (isEntryFunction) {
         // Entry function - execute on chain
         if (walletSelection.type === 'playground') {
-          const result = await executeWithPlaygroundWallet();
-          setResult(result);
+          const playgroundResult = await executeWithPlaygroundWallet();
+          
+          // Convert playground result to ExecutionResult format
+          const executionResult: ExecutionResult = {
+            status: 'success',
+            txHash: playgroundResult.txHash,
+            digest: playgroundResult.txHash,
+            network,
+            timestamp: new Date().toISOString(),
+            gasUsed: playgroundResult.gasUsed,
+            objectChanges: playgroundResult.outputs,
+            functionName: method.name,
+            moduleName,
+            packageId,
+            parameters: Object.values(inputs),
+          };
+          
+          setResult(executionResult);
           setExecutionState(ExecutionState.SUCCESS);
-          onExecute(result);
+          onExecute(executionResult);
           
           // Save execution history for playground wallet
           await saveExecutionHistory(
@@ -473,9 +489,9 @@ export function PTBExecuteDialogV2({
             method.name,
             moduleName,
             Object.values(inputs),
-            result,
-            result.transactionDigest,
-            result.gasUsed
+            playgroundResult,
+            playgroundResult.transactionDigest,
+            playgroundResult.gasUsed
           );
           
           toast({
@@ -524,6 +540,16 @@ export function PTBExecuteDialogV2({
             onSuccess: async (result) => {
               console.log('Transaction successful:', result);
               
+              // Debug log the gas structure
+              console.log('🔍 Gas Debug - Full effects:', result.effects);
+              console.log('🔍 Gas Debug - effects.gasUsed:', result.effects?.gasUsed);
+              console.log('🔍 Gas Debug - typeof gasUsed:', typeof result.effects?.gasUsed);
+              if (result.effects?.gasUsed && typeof result.effects.gasUsed === 'object') {
+                console.log('🔍 Gas Debug - gasUsed.computationCost:', result.effects.gasUsed.computationCost);
+                console.log('🔍 Gas Debug - gasUsed.storageCost:', result.effects.gasUsed.storageCost);
+                console.log('🔍 Gas Debug - gasUsed.storageRebate:', result.effects.gasUsed.storageRebate);
+              }
+              
               // Extract ALL relevant data from the transaction
               const outputs = [];
               
@@ -567,13 +593,26 @@ export function PTBExecuteDialogV2({
                 });
               }
               
+              // Calculate total gas used from all components
+              const computationCost = parseInt(result.effects?.gasUsed?.computationCost || '0');
+              const storageCost = parseInt(result.effects?.gasUsed?.storageCost || '0');
+              const storageRebate = parseInt(result.effects?.gasUsed?.storageRebate || '0');
+              
+              console.log('🔍 Gas Calculation Debug:');
+              console.log('  computationCost:', result.effects?.gasUsed?.computationCost, '→', computationCost);
+              console.log('  storageCost:', result.effects?.gasUsed?.storageCost, '→', storageCost);
+              console.log('  storageRebate:', result.effects?.gasUsed?.storageRebate, '→', storageRebate);
+              
+              const totalGasUsed = (computationCost + storageCost - storageRebate).toString();
+              console.log('  totalGasUsed:', totalGasUsed);
+              
               const successResult: ExecutionResult = {
                 status: 'success',
                 txHash: result.digest,
                 digest: result.digest,
                 network,
                 timestamp: new Date().toISOString(),
-                gasUsed: result.effects?.gasUsed?.computationCost || '0',
+                gasUsed: totalGasUsed,
                 computationCost: result.effects?.gasUsed?.computationCost,
                 storageCost: result.effects?.gasUsed?.storageCost,
                 storageRebate: result.effects?.gasUsed?.storageRebate,
@@ -603,11 +642,11 @@ export function PTBExecuteDialogV2({
                 {
                   success: true,
                   transactionDigest: result.digest,
-                  gasUsed: result.effects?.gasUsed?.computationCost,
+                  gasUsed: totalGasUsed,
                   returnValues: outputs
                 },
                 result.digest,
-                parseInt(result.effects?.gasUsed?.computationCost || '0')
+                parseInt(totalGasUsed)
               );
               
               toast({
@@ -820,85 +859,151 @@ export function PTBExecuteDialogV2({
       <DialogContent className={cn(
         "flex flex-col",
         "max-h-[90vh]",
-        "w-[95vw] sm:w-[700px] lg:w-[800px]",
+        "w-[95vw] sm:w-[600px]",
         "p-0"
       )}>
-        {/* Fixed Header */}
-        <DialogHeader className="px-6 pt-6 pb-4 border-b bg-background">
-          <DialogTitle className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="font-semibold text-lg">{method.name}</span>
-              <Badge 
-                variant={isEntryFunction ? "default" : "secondary"}
-                className="text-xs"
-              >
-                {isEntryFunction ? 'Entry' : 'View'}
-              </Badge>
-            </div>
-            
-            {/* Wallet Indicator */}
-            {isEntryFunction && (
-              <div className="flex items-center gap-2">
-                {walletSelection.type === 'playground' && (
-                  <Badge variant="outline" className="gap-1 text-xs">
-                    <Zap className="h-3 w-3" />
-                    Playground
-                  </Badge>
-                )}
-                {walletSelection.type === 'external' && (
-                  <Badge variant="outline" className="gap-1 text-xs">
-                    <Wallet className="h-3 w-3" />
-                    Connected
-                  </Badge>
-                )}
-              </div>
-            )}
+        {/* Simplified Header */}
+        <DialogHeader className="px-6 pt-6 pb-4 border-b">
+          <DialogTitle className="text-lg font-semibold">
+            {method.name}
           </DialogTitle>
-          
-          {/* Wallet Message */}
-          {walletSelection.message && (
-            <p className="text-sm text-muted-foreground mt-2">
-              {walletSelection.message}
-            </p>
-          )}
+          <p className="text-sm text-muted-foreground mt-1">
+            {isEntryFunction ? 'Execute entry function' : 'Call view function'}
+          </p>
         </DialogHeader>
         
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {/* Wallet Status Section - Only for Entry Functions */}
+          {isEntryFunction && (
+            <div className="p-4 rounded-lg border bg-gradient-to-r from-blue-50/50 to-purple-50/50 dark:from-blue-950/20 dark:to-purple-950/20 border-blue-200/50 dark:border-blue-800/50 mb-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    "p-2 rounded-lg",
+                    walletSelection.type === 'playground' ? "bg-yellow-100 dark:bg-yellow-900/30" : 
+                    walletSelection.type === 'external' ? "bg-blue-100 dark:bg-blue-900/30" :
+                    "bg-gray-100 dark:bg-gray-800"
+                  )}>
+                    {walletSelection.type === 'playground' ? (
+                      <Zap className="h-5 w-5 text-yellow-600 dark:text-yellow-500" />
+                    ) : walletSelection.type === 'external' ? (
+                      <Wallet className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    ) : (
+                      <Wallet className="h-5 w-5 text-gray-400" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                        {walletSelection.type === 'playground' && 'Playground Wallet'}
+                        {walletSelection.type === 'external' && (currentAccount?.label || 'External Wallet')}
+                        {walletSelection.type === 'none' && 'No Wallet Connected'}
+                      </p>
+                      {walletSelection.canExecute && (
+                        <Badge 
+                          variant="outline" 
+                          className={cn(
+                            "text-xs px-2 py-0",
+                            network === 'testnet' 
+                              ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950/50 dark:text-orange-400"
+                              : "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/50 dark:text-green-400"
+                          )}
+                        >
+                          {network === 'testnet' ? 'Testnet' : 'Mainnet'}
+                        </Badge>
+                      )}
+                    </div>
+                    {walletSelection.canExecute && currentAccount?.address && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-600 dark:text-gray-400 font-mono leading-none">
+                          {currentAccount.address.slice(0, 10)}...{currentAccount.address.slice(-8)}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-4 w-4 p-0 flex-shrink-0"
+                          onClick={() => {
+                            const explorerUrl = `https://explorer.iota.org/address/${currentAccount.address}?network=${network}`;
+                            window.open(explorerUrl, '_blank');
+                          }}
+                          title="View address on IOTA Explorer"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Connection Status Indicator */}
+                <div className="flex items-center gap-2">
+                  {walletSelection.canExecute ? (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-100 dark:bg-green-900/30">
+                      <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                      <span className="text-xs font-medium text-green-700 dark:text-green-400">Connected</span>
+                    </div>
+                  ) : (
+                    <>  
+                      {network === 'testnet' && !isPlaygroundConnected && !isExternalConnected && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => await connectPlaygroundWallet()}
+                          className="border-yellow-200 hover:bg-yellow-50 dark:border-yellow-800 dark:hover:bg-yellow-950/50"
+                        >
+                          <Zap className="h-3.5 w-3.5 mr-1.5 text-yellow-600" />
+                          Use Playground
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={async () => await connectExternalWallet()}
+                        className="border-blue-200 hover:bg-blue-50 dark:border-blue-800 dark:hover:bg-blue-950/50"
+                      >
+                        <Wallet className="h-3.5 w-3.5 mr-1.5 text-blue-600" />
+                        Connect Wallet
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Parameters Section */}
           {hasParameters ? (
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-muted-foreground">
-                Parameters
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium flex items-center gap-2">
+                <span>Function Parameters</span>
+                {hasParameters && (
+                  <Badge variant="outline" className="text-xs">
+                    {parameters.length} {parameters.length === 1 ? 'param' : 'params'}
+                  </Badge>
+                )}
               </h3>
               <div className="space-y-3">
                 {parameters.map((param, index) => (
-                  <div key={index} className="space-y-2">
-                    <div className="flex items-baseline justify-between">
-                      <label className="text-sm font-medium">
-                        {param.name}
-                      </label>
-                      <span className="text-xs text-muted-foreground font-mono">
-                        {param.type}
-                      </span>
-                    </div>
-                    <ParameterValidator
-                      name={param.name}
-                      type={param.type}
-                      value={inputs[param.name] || ''}
-                      onChange={(value) => handleInputChange(param.name, value)}
-                      onValidationChange={(isValid) => handleValidationChange(param.name, isValid)}
-                      required={true}
-                      index={index}
-                      packageId={packageId}
-                    />
-                  </div>
+                  <ParameterValidator
+                    key={index}
+                    name={param.name}
+                    type={param.type}
+                    value={inputs[param.name] || ''}
+                    onChange={(value) => handleInputChange(param.name, value)}
+                    onValidationChange={(isValid) => handleValidationChange(param.name, isValid)}
+                    required={true}
+                    index={index}
+                    packageId={packageId}
+                  />
                 ))}
               </div>
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              This function has no parameters
+              <PlayCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>This function has no parameters</p>
+              <p className="text-xs mt-1">Click execute to run it directly</p>
             </div>
           )}
           
@@ -913,57 +1018,30 @@ export function PTBExecuteDialogV2({
           )}
         </div>
         
-        {/* Fixed Footer */}
-        <DialogFooter className="px-6 py-4 border-t bg-background">
+        {/* Simplified Footer */}
+        <DialogFooter className="px-6 py-4 border-t flex-row justify-end gap-2">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
           >
-            Close
+            Cancel
           </Button>
-          
-          {/* Show wallet connection button if needed */}
-          {isEntryFunction && !walletSelection.canExecute && (
-            <>
-              {network === 'testnet' && !isPlaygroundConnected && !isExternalConnected && (
-                <Button
-                  variant="secondary"
-                  onClick={async () => {
-                    await connectPlaygroundWallet();
-                  }}
-                  className="gap-2"
-                >
-                  <Wallet className="h-4 w-4" />
-                  Connect Playground
-                </Button>
-              )}
-              {(!isExternalConnected && (network === 'mainnet' || (network === 'testnet' && !isPlaygroundConnected))) && (
-                <Button
-                  variant="secondary"
-                  onClick={async () => {
-                    await connectExternalWallet();
-                  }}
-                  className="gap-2"
-                >
-                  <Wallet className="h-4 w-4" />
-                  Connect Wallet
-                </Button>
-              )}
-            </>
-          )}
           
           <Button
             onClick={handleExecute}
             disabled={isButtonDisabled()}
-            className="min-w-[140px]"
+            className="min-w-[120px]"
           >
             {executionState === ExecutionState.EXECUTING ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                {getButtonText()}
+                Processing
               </>
             ) : (
-              getButtonText()
+              <>
+                <PlayCircle className="h-4 w-4 mr-2" />
+                Execute
+              </>
             )}
           </Button>
         </DialogFooter>

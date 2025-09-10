@@ -126,8 +126,12 @@ export function PTBPackageSelector({
       
       setAllPackages(combined);
       
-      // Auto-select the deployed package if provided or if it changed
-      if (deployedPackageId && deployedPackageId !== selectedPackage) {
+      // Auto-select the latest package if none selected
+      if (!selectedPackage && combined.length > 0) {
+        onPackageChange(combined[0].package_id);
+      }
+      // Then handle deployedPackageId prop if provided
+      else if (deployedPackageId && deployedPackageId !== selectedPackage) {
         onPackageChange(deployedPackageId);
       }
     } catch (error) {
@@ -310,17 +314,17 @@ export function PTBPackageSelector({
                 </Badge>
               )}
             </div>
-            {selectedPackage && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleOpenExplorer}
-                className="h-6 gap-1"
-              >
-                <ExternalLink className="h-3 w-3" />
-                Explorer
-              </Button>
-            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleOpenExplorer}
+              className="h-6 gap-1"
+              disabled={!selectedPackage}
+              title={selectedPackage ? `View ${selectedPackage} in Explorer` : 'Select a package first'}
+            >
+              <ExternalLink className="h-3 w-3" />
+              Explorer
+            </Button>
           </div>
 
           <Popover open={open} onOpenChange={setOpen}>

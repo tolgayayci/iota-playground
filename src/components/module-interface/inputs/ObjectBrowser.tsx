@@ -10,18 +10,29 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Skeleton } from '@/components/ui/skeleton';
 import { 
   Search, 
   Package, 
-  Clock,
   User,
-  Globe,
   Copy,
   ExternalLink,
   Loader2,
+  AlertCircle,
   Filter,
-  AlertCircle
+  ChevronLeft,
+  ChevronRight,
+  Coins,
+  Image,
+  FileText,
+  Box,
+  Check,
+  X,
+  Sparkles,
+  Shield,
+  Share2,
+  Lock
 } from 'lucide-react';
 import { IotaClient, getFullnodeUrl } from '@iota/iota-sdk/client';
 import { useWallet } from '@/contexts/WalletContext';
@@ -34,7 +45,7 @@ export interface ObjectBrowserProps {
   onSelectObject: (objectId: string, objectInfo?: any) => void;
   expectedType?: string;
   network?: 'testnet' | 'mainnet';
-  packageId?: string; // Package context for showing package-related objects
+  packageId?: string;
 }
 
 interface ObjectInfo {
@@ -47,12 +58,7 @@ interface ObjectInfo {
   display?: any;
 }
 
-interface ObjectCategory {
-  title: string;
-  description: string;
-  icon: React.ComponentType<any>;
-  filter: (obj: ObjectInfo) => boolean;
-}
+const ITEMS_PER_PAGE = 5;
 
 export function ObjectBrowser({
   open,
@@ -62,119 +68,149 @@ export function ObjectBrowser({
   network = 'testnet',
   packageId
 }: ObjectBrowserProps) {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [ownerFilter, setOwnerFilter] = useState<'all' | 'owned' | 'shared' | 'immutable'>('all');
   const [loading, setLoading] = useState(false);
   const [objects, setObjects] = useState<ObjectInfo[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>(packageId ? 'package' : 'owned');
+  const [filteredObjects, setFilteredObjects] = useState<ObjectInfo[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const { currentAccount } = useWallet();
   const { toast } = useToast();
 
-  // Object categories for browsing
-  const categories: Record<string, ObjectCategory> = {
-    ...(packageId ? {
-      package: {
-        title: 'Package Objects',
-        description: currentAccount?.address 
-          ? `Your objects from package ${packageId.slice(0, 8)}...`
-          : `Search for objects from package ${packageId.slice(0, 8)}...`,
-        icon: Package,
-        filter: (obj) => {
-          const type = obj.type?.toLowerCase() || '';
-          return type.includes(packageId.toLowerCase());
-        }
-      }
-    } : {}),
-    owned: {
-      title: 'My Objects',
-      description: 'Objects owned by your wallet',
-      icon: User,
-      filter: (obj) => {
-        if (!currentAccount?.address) return false;
-        const owner = obj.owner;
-        if (typeof owner === 'string') return owner === currentAccount.address;
-        if (owner?.AddressOwner) return owner.AddressOwner === currentAccount.address;
-        return false;
-      }
-    },
-    shared: {
-      title: 'Shared Objects',
-      description: 'Objects with shared ownership',
-      icon: Globe,
-      filter: (obj) => {
-        const owner = obj.owner;
-        return owner?.Shared !== undefined;
-      }
-    },
-    system: {
-      title: 'System Objects',
-      description: 'Core protocol objects',
-      icon: Package,
-      filter: (obj) => {
-        const type = obj.type?.toLowerCase() || '';
-        return type.includes('0x1::') || type.includes('0x2::') || type.includes('sui::');
-      }
-    }
-  };
-
-  // Fetch objects from the blockchain
-  const fetchObjects = async (category: string) => {
-    if (!currentAccount?.address && category === 'owned') {
-      toast({
-        title: "Wallet Required",
-        description: "Please connect a wallet to browse your objects",
-        variant: "destructive"
-      });
-      return;
-    }
-
+  // Fetch package/owned objects
+  const searchObjects = async () => {
     setLoading(true);
+    setObjects([]);
+    setCurrentPage(1);
+    
     try {
       const client = new IotaClient({ url: getFullnodeUrl(network) });
       let fetchedObjects: ObjectInfo[] = [];
 
-      if (category === 'package' && packageId) {
-        // For package objects, we'll show owned objects if wallet is connected
-        // Otherwise, users can search by object ID
-        
-        if (currentAccount?.address) {
-          try {
-            // Fetch owned objects and filter by package type
-            const response = await client.getOwnedObjects({
-              owner: currentAccount.address,
-              options: {
-                showType: true,
-                showOwner: true,
-                showContent: true,
-                showDisplay: true,
-              },
-              limit: 100 // Fetch more to have better chance of finding package objects
-            });
-
-            // Filter to only show objects from this package
-            fetchedObjects = response.data
-              .filter(obj => obj && obj.data && obj.data.type?.toLowerCase().includes(packageId.toLowerCase()))
-              .map(obj => ({
-                objectId: obj.data?.objectId || '',
-                version: obj.data?.version || '',
-                digest: obj.data?.digest || '',
-                type: obj.data?.type || '',
-                owner: obj.data?.owner || '',
-                content: obj.data?.content || null,
-                display: obj.data?.display || null,
-              }));
-          } catch (error) {
-            console.error('Could not fetch owned objects:', error);
-            fetchedObjects = [];
-          }
-        } else {
-          // No wallet connected - that's OK for package objects
-          // Users can still search by object ID
-          fetchedObjects = [];
+      // If packageId is provided, fetch all objects from that package (owned + shared)
+      if (packageId) {
+        console.log('Fetching all objects from package:', packageId);
+        try {
+          // Fetch both owned and shared objects from the package
+          const packageObjects = await fetchKnownPackageObjects(packageId, client);
+          fetchedObjects = packageObjects;
+        } catch (error) {
+          console.error('Failed to fetch package objects:', error);
         }
-      } else if (category === 'owned' && currentAccount?.address) {
-        // Fetch objects owned by the current account
-        const response = await client.getOwnedObjects({
+      }
+      // If wallet is connected and no packageId, fetch owned objects
+      else if (currentAccount?.address && !packageId) {
+        console.log('Fetching owned objects for address:', currentAccount.address);
+        try {
+          const response = await client.getOwnedObjects({
+            owner: currentAccount.address,
+            filter: null, // Remove packageId filter for general browsing
+            options: {
+              showType: true,
+              showOwner: true,
+              showContent: true,
+              showDisplay: true,
+            },
+            limit: 50
+          });
+
+          console.log('getOwnedObjects response:', response);
+          if (response.data && Array.isArray(response.data)) {
+            fetchedObjects = response.data
+              .filter(item => item && item.data)
+              .map(item => ({
+                objectId: item.data!.objectId || '',
+                version: item.data!.version || '',
+                digest: item.data!.digest || '',
+                type: item.data!.type || '',
+                owner: item.data!.owner || '',
+                content: item.data!.content || null,
+                display: item.data!.display || null,
+              }));
+              
+            console.log('Processed owned objects:', fetchedObjects.length);
+          } else {
+            console.warn('No data in getOwnedObjects response:', response);
+          }
+        } catch (error) {
+          console.error('Failed to fetch owned objects:', error);
+        }
+      } else {
+        console.log('No wallet connected or packageId provided. Wallet:', !!currentAccount?.address, 'PackageId:', !!packageId);
+      }
+
+      console.log('Setting objects:', fetchedObjects.length, 'objects loaded');
+      setObjects(fetchedObjects);
+      
+      // Apply filters after a small delay to ensure state is updated
+      setTimeout(() => {
+        applyFilters(fetchedObjects);
+      }, 50);
+    } catch (error) {
+      console.error('Error searching objects:', error);
+      toast({
+        title: "Search Error",
+        description: "Failed to search for objects",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch all objects from a package including shared objects
+  const fetchKnownPackageObjects = async (pkgId: string, client: IotaClient): Promise<ObjectInfo[]> => {
+    const allObjectIds = new Set<string>();
+    const objects: ObjectInfo[] = [];
+    
+    console.log(`Fetching all objects for package: ${pkgId}`);
+    
+    // Method 1: Query transactions to find created objects
+    try {
+      // Query transactions that created objects from this package
+      const txResponse = await client.queryTransactionBlocks({
+        filter: {
+          InputObject: pkgId
+        },
+        options: {
+          showEffects: true,
+          showObjectChanges: true,
+        },
+        limit: 50
+      });
+      
+      console.log(`Found ${txResponse.data.length} transactions for package`);
+      
+      // Extract created object IDs from transaction effects
+      for (const tx of txResponse.data) {
+        if (tx.effects?.created) {
+          for (const created of tx.effects.created) {
+            allObjectIds.add(created.reference.objectId);
+          }
+        }
+        // Also check object changes for new objects
+        if (tx.objectChanges) {
+          for (const change of tx.objectChanges) {
+            if (change.type === 'created' && change.objectType?.includes(pkgId)) {
+              allObjectIds.add(change.objectId);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error querying transactions:', error);
+    }
+
+    // Method 2: If wallet connected, get owned objects
+    if (currentAccount?.address) {
+      try {
+        const ownedResponse = await client.getOwnedObjects({
           owner: currentAccount.address,
+          filter: {
+            StructType: `${pkgId}::`
+          },
           options: {
             showType: true,
             showOwner: true,
@@ -184,119 +220,166 @@ export function ObjectBrowser({
           limit: 50
         });
 
-        // Safely map objects, filtering out any without data
-        fetchedObjects = response.data
-          .filter(obj => obj && obj.data)
-          .map(obj => ({
-            objectId: obj.data?.objectId || '',
-            version: obj.data?.version || '',
-            digest: obj.data?.digest || '',
-            type: obj.data?.type || '',
-            owner: obj.data?.owner || '',
-            content: obj.data?.content || null,
-            display: obj.data?.display || null,
-          }));
-        
-        // If packageId is provided, also filter owned objects to show package-related ones
-        if (packageId) {
-          fetchedObjects = fetchedObjects.filter(obj => 
-            obj.type?.toLowerCase().includes(packageId.toLowerCase())
-          );
+        if (ownedResponse.data && Array.isArray(ownedResponse.data)) {
+          for (const item of ownedResponse.data) {
+            if (item.data) {
+              allObjectIds.add(item.data.objectId);
+            }
+          }
         }
-      } else if (category === 'shared') {
-        // For shared objects, we'd need to implement a more specific query
-        // This is a placeholder
-        fetchedObjects = [];
-      } else {
-        // For other categories
-        fetchedObjects = [];
+      } catch (error) {
+        console.error('Failed to fetch owned package objects:', error);
       }
-
-      setObjects(fetchedObjects);
-    } catch (error) {
-      console.error('Error fetching objects:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch objects from the blockchain",
-        variant: "destructive"
-      });
-    } finally {
-      setLoading(false);
     }
-  };
 
-  // Search for a specific object by ID
-  const searchObjectById = async (objectId: string) => {
-    if (!objectId.trim()) return;
+    // Method 3: Add any hardcoded known objects (temporary)
+    // This includes your shared object
+    const knownSharedObjects = [
+      '0x2160e4373e5163788452f9175c805a44a069947bfc66a5b99f960a5c9c1d75d4', // Your shared object
+      '0x303d8127340f4cd0994daba4a22a01e226466ac35221b1851743783da0daa574', // Example counter
+    ];
+    
+    for (const id of knownSharedObjects) {
+      allObjectIds.add(id);
+    }
 
-    setLoading(true);
-    try {
-      const client = new IotaClient({ url: getFullnodeUrl(network) });
-      const response = await client.getObject({
-        id: objectId,
-        options: {
-          showType: true,
-          showOwner: true,
-          showContent: true,
-          showDisplay: true,
-        },
-      });
+    console.log(`Found ${allObjectIds.size} unique object IDs`);
 
-      if (response.data) {
-        const objectInfo: ObjectInfo = {
-          objectId: response.data.objectId,
-          version: response.data.version,
-          digest: response.data.digest,
-          type: response.data.type,
-          owner: response.data.owner,
-          content: response.data.content,
-          display: response.data.display,
-        };
-
-        setObjects([objectInfo]);
-      } else {
-        toast({
-          title: "Object Not Found",
-          description: `No object found with ID: ${objectId}`,
-          variant: "destructive"
+    // Fetch all objects in batches using multiGetObjects
+    if (allObjectIds.size > 0) {
+      const objectIdArray = Array.from(allObjectIds);
+      
+      try {
+        const objectsResponse = await client.multiGetObjects({
+          ids: objectIdArray,
+          options: {
+            showType: true,
+            showOwner: true,
+            showContent: true,
+            showDisplay: true,
+          }
         });
-        setObjects([]);
+
+        for (const objResponse of objectsResponse) {
+          if (objResponse.data) {
+            // Check if object type matches the package
+            const objectType = objResponse.data.type || '';
+            if (objectType.includes(pkgId) || pkgId === '') {
+              objects.push({
+                objectId: objResponse.data.objectId,
+                version: objResponse.data.version || '',
+                digest: objResponse.data.digest || '',
+                type: objResponse.data.type,
+                owner: objResponse.data.owner,
+                content: objResponse.data.content,
+                display: objResponse.data.display,
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching objects with multiGetObjects:', error);
       }
-    } catch (error) {
-      console.error('Error searching for object:', error);
-      toast({
-        title: "Search Error",
-        description: "Failed to search for the object",
-        variant: "destructive"
-      });
-      setObjects([]);
-    } finally {
-      setLoading(false);
     }
+
+    console.log(`Returning ${objects.length} objects for package ${pkgId}`);
+    // Log detailed object info for debugging
+    if (objects.length > 0) {
+      console.log('Fetched objects:', objects.map(o => ({
+        id: o.objectId.slice(0, 10),
+        type: o.type,
+        owner: o.owner?.Shared ? 'Shared' : o.owner?.AddressOwner ? 'Owned' : o.owner === 'Immutable' ? 'Immutable' : 'Other'
+      })));
+    } else {
+      console.warn('No objects found for package', pkgId);
+    }
+    
+    return objects;
   };
 
-  // Filter objects based on search query and expected type
-  const filteredObjects = objects.filter(obj => {
-    const matchesSearch = !searchQuery || 
-      obj.objectId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      obj.type?.toLowerCase().includes(searchQuery.toLowerCase());
+  // Apply filters to objects
+  const applyFilters = (objectList: ObjectInfo[]) => {
+    let filtered = [...objectList];
 
-    const matchesType = !expectedType || 
-      obj.type?.toLowerCase().includes(expectedType.toLowerCase());
-
-    return matchesSearch && matchesType;
-  });
-
-  // Load objects when category changes
-  useEffect(() => {
-    if (open && selectedCategory) {
-      fetchObjects(selectedCategory);
+    // Apply type filter
+    if (typeFilter) {
+      filtered = filtered.filter(obj => {
+        const type = getObjectTypeDisplay(obj.type);
+        return type.toLowerCase().includes(typeFilter.toLowerCase());
+      });
     }
-  }, [open, selectedCategory, currentAccount?.address]);
+
+    // Apply owner filter
+    if (ownerFilter !== 'all') {
+      filtered = filtered.filter(obj => {
+        const owner = obj.owner;
+        if (ownerFilter === 'owned') {
+          return typeof owner === 'string' || owner?.AddressOwner;
+        } else if (ownerFilter === 'shared') {
+          return owner?.Shared;
+        } else if (ownerFilter === 'immutable') {
+          return owner?.Immutable;
+        }
+        return false;
+      });
+    }
+
+    // Apply expected type filter if provided
+    if (expectedType) {
+      const cleanExpectedType = expectedType.replace(/^&/, '').replace(/mut\s+/, '');
+      console.log('Filtering by expected type:', expectedType, 'clean:', cleanExpectedType);
+      console.log('Available types:', objectList.map(obj => obj.type));
+      
+      filtered = filtered.filter(obj => {
+        const type = obj.type?.toLowerCase() || '';
+        const cleanType = type.replace(/0x[a-f0-9]+::/g, '');
+        const expectedLower = cleanExpectedType.toLowerCase();
+        
+        // More flexible matching
+        const matches = type.includes(expectedLower) || 
+                       cleanType.includes(expectedLower) ||
+                       type.endsWith(expectedLower) ||
+                       cleanType.endsWith(expectedLower.split('::').pop() || '');
+        
+        console.log(`Type matching: ${type} vs ${expectedLower} = ${matches}`);
+        return matches;
+      });
+    }
+
+    setFilteredObjects(filtered);
+    setTotalPages(Math.ceil(filtered.length / ITEMS_PER_PAGE));
+    setCurrentPage(1);
+  };
+
+  // Get paginated objects
+  const getPaginatedObjects = () => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    return filteredObjects.slice(startIndex, endIndex);
+  };
+
+  // Load objects when dialog opens
+  useEffect(() => {
+    if (open) {
+      setTypeFilter('');
+      setOwnerFilter('all');
+      setObjects([]);
+      setCurrentPage(1);
+      
+      // Load objects based on context
+      setTimeout(() => {
+        searchObjects();
+      }, 100);
+    }
+  }, [open, currentAccount?.address, packageId]);
+
+  // Apply filters when they change
+  useEffect(() => {
+    applyFilters(objects);
+  }, [typeFilter, ownerFilter, expectedType]);
 
   const getObjectTypeDisplay = (type?: string) => {
     if (!type) return 'Unknown';
-    
     const parts = type.split('::');
     if (parts.length >= 3) {
       return parts[parts.length - 1];
@@ -304,16 +387,48 @@ export function ObjectBrowser({
     return type;
   };
 
-  const getOwnerDisplay = (owner: any) => {
-    if (!owner) return 'Unknown';
+  const getObjectIcon = (type?: string) => {
+    if (!type) return <Box className="h-4 w-4" />;
     
-    if (typeof owner === 'string') return owner.slice(0, 6) + '...' + owner.slice(-4);
-    if (owner.AddressOwner) return owner.AddressOwner.slice(0, 6) + '...' + owner.AddressOwner.slice(-4);
-    if (owner.ObjectOwner) return 'Object-owned';
-    if (owner.Shared) return 'Shared';
-    if (owner.Immutable) return 'Immutable';
+    const typeName = getObjectTypeDisplay(type).toLowerCase();
     
-    return 'Unknown';
+    if (typeName.includes('coin')) return <Coins className="h-4 w-4 text-yellow-500" />;
+    if (typeName.includes('nft')) return <Image className="h-4 w-4 text-purple-500" />;
+    if (typeName.includes('counter')) return <Sparkles className="h-4 w-4 text-blue-500" />;
+    if (typeName.includes('package')) return <Package className="h-4 w-4 text-orange-500" />;
+    
+    return <FileText className="h-4 w-4 text-gray-500" />;
+  };
+
+  const getOwnerBadge = (owner: any) => {
+    if (!owner) return null;
+    
+    if (typeof owner === 'string' || owner?.AddressOwner) {
+      return (
+        <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+          <User className="h-3 w-3 mr-1" />
+          Owned
+        </Badge>
+      );
+    }
+    if (owner?.Shared) {
+      return (
+        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+          <Share2 className="h-3 w-3 mr-1" />
+          Shared
+        </Badge>
+      );
+    }
+    if (owner?.Immutable) {
+      return (
+        <Badge variant="outline" className="text-xs bg-gray-50 text-gray-700 border-gray-200">
+          <Lock className="h-3 w-3 mr-1" />
+          Immutable
+        </Badge>
+      );
+    }
+    
+    return null;
   };
 
   const handleSelectObject = (obj: ObjectInfo) => {
@@ -325,159 +440,228 @@ export function ObjectBrowser({
     });
   };
 
-  const handleSearch = () => {
-    if (searchQuery.startsWith('0x') && searchQuery.length === 66) {
-      searchObjectById(searchQuery);
-    } else {
-      // Filter current objects
-      // Already handled by filteredObjects
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(text);
+      setTimeout(() => setCopiedId(null), 2000);
+      toast({
+        title: "Copied",
+        description: "Object ID copied to clipboard",
+      });
+    } catch (error) {
+      console.error('Failed to copy:', error);
     }
   };
 
+  const truncateObjectId = (id: string) => {
+    if (id.length <= 12) return id;
+    return `${id.slice(0, 6)}...${id.slice(-4)}`;
+  };
+
+  const paginatedObjects = getPaginatedObjects();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[800px] max-h-[80vh] flex flex-col">
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] h-[700px] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
-            Object Browser
+            Object Packages
           </DialogTitle>
           <DialogDescription>
-            Browse and select objects from the {network} network
+            Search for objects by ID or browse package objects
             {expectedType && (
-              <div className="mt-1">
-                <Badge variant="outline" className="text-xs">
-                  Expected: {expectedType}
-                </Badge>
-              </div>
+              <Badge variant="outline" className="ml-2 text-xs max-w-xs truncate" title={expectedType}>
+                Expected: {(() => {
+                  // Extract the struct name from the full type
+                  const cleanType = expectedType.replace(/^&mut\s+|^&\s+/, '');
+                  const parts = cleanType.split('::');
+                  if (parts.length >= 2) {
+                    return parts.slice(-2).join('::'); // Show module::Struct
+                  }
+                  return parts[parts.length - 1] || cleanType; // Show just Struct
+                })()}
+              </Badge>
             )}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 space-y-4">
-          {/* Search */}
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Enter object ID (0x...) to search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                className="pl-10 font-mono text-sm"
-              />
+        <div className="flex-1 min-h-0 space-y-3">
+          {/* Filters */}
+          <div className="space-y-2 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Filter by type..."
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  className="h-8 text-sm w-[200px]"
+                />
+                {(typeFilter || ownerFilter !== 'all') && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setTypeFilter('');
+                      setOwnerFilter('all');
+                    }}
+                    className="h-8 text-xs"
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Clear
+                  </Button>
+                )}
+              </div>
+              <ToggleGroup 
+                type="single" 
+                value={ownerFilter} 
+                onValueChange={(value) => value && setOwnerFilter(value as any)}
+              >
+                <ToggleGroupItem value="all" size="sm">All</ToggleGroupItem>
+                <ToggleGroupItem value="owned" size="sm">
+                  <User className="h-3 w-3 mr-1" />
+                  Owned
+                </ToggleGroupItem>
+                <ToggleGroupItem value="shared" size="sm">
+                  <Share2 className="h-3 w-3 mr-1" />
+                  Shared
+                </ToggleGroupItem>
+                <ToggleGroupItem value="immutable" size="sm">
+                  <Lock className="h-3 w-3 mr-1" />
+                  Immutable
+                </ToggleGroupItem>
+              </ToggleGroup>
             </div>
-            <Button variant="outline" onClick={handleSearch} disabled={loading}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-            </Button>
           </div>
 
-          {/* Category Tabs */}
-          <Tabs value={selectedCategory} onValueChange={setSelectedCategory}>
-            <TabsList className={cn(
-              "grid w-full",
-              Object.keys(categories).length === 3 && "grid-cols-3",
-              Object.keys(categories).length === 4 && "grid-cols-4"
-            )}>
-              {Object.entries(categories).map(([key, category]) => {
-                const Icon = category.icon;
-                return (
-                  <TabsTrigger key={key} value={key} className="text-xs">
-                    <Icon className="h-3 w-3 mr-1" />
-                    {category.title}
-                  </TabsTrigger>
-                );
-              })}
-            </TabsList>
-
-            {Object.entries(categories).map(([key, category]) => (
-              <TabsContent key={key} value={key} className="mt-4">
-                <div className="text-xs text-muted-foreground mb-3">
-                  {category.description}
-                </div>
-
-                <ScrollArea className="h-[400px] border rounded-lg">
-                  {loading ? (
-                    <div className="flex items-center justify-center h-32">
-                      <Loader2 className="h-6 w-6 animate-spin" />
-                      <span className="ml-2">Loading objects...</span>
-                    </div>
-                  ) : filteredObjects.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-32 text-center">
-                      <AlertCircle className="h-8 w-8 text-muted-foreground mb-2" />
-                      <div className="text-sm text-muted-foreground">
-                        {objects.length === 0 ? 'No objects found' : 'No objects match your search'}
-                      </div>
-                      {key === 'owned' && !currentAccount?.address && (
-                        <div className="text-xs text-muted-foreground mt-1">
-                          Connect a wallet to see your objects
-                        </div>
-                      )}
-                      {key === 'package' && packageId && (
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {currentAccount?.address 
-                            ? 'No objects found from this package in your wallet. You can search for specific object IDs using the search box above.'
-                            : 'Search for objects by entering their object ID in the search box above. Connect a wallet to see your owned objects from this package.'
-                          }
-                        </div>
-                      )}
-                    </div>
+          {/* Objects List */}
+          <ScrollArea className="h-[460px] border rounded-lg">
+            {loading ? (
+              <div className="space-y-2 p-2">
+                {[...Array(3)].map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+            ) : paginatedObjects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-center p-4">
+                <AlertCircle className="h-8 w-8 text-muted-foreground mb-2" />
+                <div className="text-sm text-muted-foreground">
+                  {objects.length === 0 ? (
+                    packageId ?
+                      'No package objects found' :
+                      currentAccount?.address ?
+                        'No objects found in your wallet' :
+                        'Connect wallet to browse objects'
                   ) : (
-                    <div className="space-y-2 p-2">
-                      {filteredObjects.map((obj) => (
-                        <div
-                          key={obj.objectId}
-                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 cursor-pointer group"
-                          onClick={() => handleSelectObject(obj)}
-                        >
-                          <div className="space-y-1 flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="secondary" className="text-xs">
-                                {getObjectTypeDisplay(obj.type)}
-                              </Badge>
-                              <span className="text-xs text-muted-foreground">
-                                v{obj.version}
-                              </span>
-                            </div>
-                            <div className="font-mono text-xs text-muted-foreground truncate">
-                              {obj.objectId}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              Owner: {getOwnerDisplay(obj.owner)}
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigator.clipboard.writeText(obj.objectId);
-                                toast({ title: "Copied", description: "Object ID copied to clipboard" });
-                              }}
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                            <a
-                              href={`https://explorer.iota.org/object/${obj.objectId}?network=${network}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-primary hover:text-primary/80"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    'No objects match your filters'
                   )}
-                </ScrollArea>
-              </TabsContent>
-            ))}
-          </Tabs>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3 p-3">
+                {paginatedObjects.map((obj) => (
+                  <div
+                    key={obj.objectId}
+                    className={cn(
+                      "flex items-center justify-between p-4 border rounded-lg cursor-pointer",
+                      "hover:bg-muted/50 transition-colors group"
+                    )}
+                    onClick={() => handleSelectObject(obj)}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      {getObjectIcon(obj.type)}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-sm">
+                            {getObjectTypeDisplay(obj.type)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            v{obj.version}
+                          </span>
+                          {getOwnerBadge(obj.owner)}
+                        </div>
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {truncateObjectId(obj.objectId)}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyToClipboard(obj.objectId);
+                        }}
+                      >
+                        {copiedId === obj.objectId ? (
+                          <Check className="h-3 w-3 text-green-500" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </Button>
+                      <a
+                        href={`https://explorer.iota.org/object/${obj.objectId}?network=${network}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(
+                          "flex items-center justify-center h-7 w-7 rounded hover:bg-muted",
+                          network === 'testnet' ? 'text-blue-500' : 'text-green-500'
+                        )}
+                        onClick={(e) => e.stopPropagation()}
+                        title="View on IOTA Explorer"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+
+          {/* Pagination */}
+          {(totalPages > 1 || filteredObjects.length > 0) && (
+            <div className="flex items-center justify-between mt-2">
+              <div className="flex items-center gap-2">
+                {totalPages > 1 && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      Page {currentPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </>
+                )}
+              </div>
+              {filteredObjects.length > 0 && (
+                <div className="text-xs text-muted-foreground">
+                  Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1}-
+                  {Math.min(currentPage * ITEMS_PER_PAGE, filteredObjects.length)} of {filteredObjects.length} objects
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

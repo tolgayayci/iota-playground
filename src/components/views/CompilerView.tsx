@@ -23,8 +23,7 @@ export function CompilerView({
   projectName,
   isSharedView = false,
 }: CompilerViewProps) {
-  const [copiedStdout, setCopiedStdout] = useState(false);
-  const [copiedStderr, setCopiedStderr] = useState(false);
+  const [copiedOutput, setCopiedOutput] = useState(false);
   const { toast } = useToast();
 
   if (!result && !isCompiling) {
@@ -40,7 +39,7 @@ export function CompilerView({
           <p className="text-sm text-muted-foreground">
             {isSharedView 
               ? "This project has no compilation history"
-              : "Click the Compile button to build your Stylus smart contract"
+              : "Click the Compile button to build your Move smart contract"
             }
           </p>
         </div>
@@ -53,19 +52,14 @@ export function CompilerView({
     ? new Date(displayResult.details.compilation_time * 1000).toLocaleTimeString()
     : new Date().toLocaleTimeString();
 
-  const handleCopy = async (content: string, type: 'stdout' | 'stderr') => {
+  const handleCopy = async (content: string) => {
     try {
       await navigator.clipboard.writeText(content);
-      if (type === 'stdout') {
-        setCopiedStdout(true);
-        setTimeout(() => setCopiedStdout(false), 2000);
-      } else {
-        setCopiedStderr(true);
-        setTimeout(() => setCopiedStderr(false), 2000);
-      }
+      setCopiedOutput(true);
+      setTimeout(() => setCopiedOutput(false), 2000);
       toast({
         title: "Copied",
-        description: `${type === 'stdout' ? 'Standard output' : 'Standard error'} copied to clipboard`,
+        description: "Compiler output copied to clipboard",
       });
     } catch (error) {
       toast({
@@ -127,107 +121,64 @@ export function CompilerView({
         </div>
       </div>
 
-      {/* Split Output View */}
-      <div className="flex-1 grid grid-cols-2 divide-x min-h-0">
-        {/* Standard Output Section */}
-        <div className="flex flex-col min-h-0">
-          <div className="flex-none flex items-center justify-between px-4 py-2 border-b bg-muted/20">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-md bg-blue-500/10">
-                <Terminal className="h-4 w-4 text-blue-500" />
-              </div>
-              <h3 className="text-sm font-medium">Standard Output</h3>
+      {/* Unified Terminal Output */}
+      <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-none flex items-center justify-between px-4 py-2 border-b bg-muted/20">
+          <div className="flex items-center gap-2">
+            <div className={cn(
+              "p-1.5 rounded-md",
+              displayResult?.success ? "bg-green-500/10" : "bg-blue-500/10"
+            )}>
+              <Terminal className={cn(
+                "h-4 w-4",
+                displayResult?.success ? "text-green-500" : "text-blue-500"
+              )} />
             </div>
-            {displayResult?.stdout && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5"
-                onClick={() => handleCopy(displayResult.stdout, 'stdout')}
-              >
-                {copiedStdout ? (
-                  <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-                ) : (
-                  <Copy className="h-3.5 w-3.5" />
-                )}
-                <span className="text-xs">
-                  {copiedStdout ? 'Copied!' : 'Copy'}
-                </span>
-              </Button>
+            <h3 className="text-sm font-medium">Compiler Output</h3>
+          </div>
+          {displayResult?.stdout && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5"
+              onClick={() => handleCopy(displayResult.stdout)}
+            >
+              {copiedOutput ? (
+                <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+              <span className="text-xs">
+                {copiedOutput ? 'Copied!' : 'Copy'}
+              </span>
+            </Button>
+          )}
+        </div>
+        <ScrollArea className="flex-1 h-full">
+          <div className="p-4 bg-muted/5">
+            {isCompiling ? (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-xs">Compiling project...</span>
+              </div>
+            ) : displayResult?.stdout ? (
+              <pre className="font-mono text-xs whitespace-pre-wrap break-all text-foreground/90">
+                {parseAnsiOutput(displayResult.stdout).map((part, i) => (
+                  <span key={i} className={cn(
+                    part.className,
+                    "dark:text-foreground/90 dark:[&.text-muted-foreground]:text-foreground/70"
+                  )}>
+                    {part.text}
+                  </span>
+                ))}
+              </pre>
+            ) : (
+              <div className="text-xs text-muted-foreground">
+                No output to display
+              </div>
             )}
           </div>
-          <ScrollArea className="flex-1 h-full">
-            <div className="p-4 bg-muted/5">
-              {isCompiling ? (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-xs">Compiling project...</span>
-                </div>
-              ) : (
-                <pre className="font-mono text-xs whitespace-pre-wrap break-all text-foreground/90">
-                  {displayResult?.stdout && parseAnsiOutput(displayResult.stdout).map((part, i) => (
-                    <span key={i} className={cn(
-                      part.className,
-                      "dark:text-foreground/90 dark:[&.text-muted-foreground]:text-foreground/70"
-                    )}>
-                      {part.text}
-                    </span>
-                  ))}
-                </pre>
-              )}
-            </div>
-          </ScrollArea>
-        </div>
-
-        {/* Standard Error Section */}
-        <div className="flex flex-col min-h-0">
-          <div className="flex-none flex items-center justify-between px-4 py-2 border-b bg-muted/20">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-md bg-red-500/10">
-                <Terminal className="h-4 w-4 text-red-500" />
-              </div>
-              <h3 className="text-sm font-medium">Standard Error</h3>
-            </div>
-            {displayResult?.stderr && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5"
-                onClick={() => handleCopy(displayResult.stderr, 'stderr')}
-              >
-                {copiedStderr ? (
-                  <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-                ) : (
-                  <Copy className="h-3.5 w-3.5" />
-                )}
-                <span className="text-xs">
-                  {copiedStderr ? 'Copied!' : 'Copy'}
-                </span>
-              </Button>
-            )}
-          </div>
-          <ScrollArea className="flex-1 h-full">
-            <div className="p-4 bg-muted/5">
-              {isCompiling ? (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-xs">Waiting for compilation output...</span>
-                </div>
-              ) : (
-                <pre className="font-mono text-xs whitespace-pre-wrap break-all text-foreground/90">
-                  {displayResult?.stderr && parseAnsiOutput(displayResult.stderr).map((part, i) => (
-                    <span key={i} className={cn(
-                      part.className,
-                      "dark:text-foreground/90 dark:[&.text-muted-foreground]:text-foreground/70"
-                    )}>
-                      {part.text}
-                    </span>
-                  ))}
-                </pre>
-              )}
-            </div>
-          </ScrollArea>
-        </div>
+        </ScrollArea>
       </div>
     </div>
   );

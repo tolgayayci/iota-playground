@@ -33,7 +33,7 @@ export function EditorPage() {
   const { user } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [isCompiling, setIsCompiling] = useState(false);
-  const [activeViews, setActiveViews] = useState<ViewId[]>(['abi', 'ptb', 'console']);
+  const [activeViews, setActiveViews] = useState<ViewId[]>(['editor', 'abi', 'ptb', 'console']);
   const [lastCompilationResult, setLastCompilationResult] = useState<CompilationResult | null>(null);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');

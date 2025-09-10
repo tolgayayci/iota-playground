@@ -35,7 +35,7 @@ export function EditorHeader({
         <div>
           <h3 className="font-medium">Contract Editor</h3>
           <p className="text-xs text-muted-foreground">
-            {isSharedView ? "View-only contract code" : "Write your Stylus smart contract"}
+            {isSharedView ? "View-only contract code" : "Write your Move smart contract"}
           </p>
         </div>
       </div>
@@ -61,14 +61,14 @@ export function EditorHeader({
           disabled={isSaving || isSharedView}
           variant="outline"
           size="sm"
-          className="gap-2 min-w-[90px]"
+          className="h-9 w-9 p-0"
+          title="Save"
         >
           {isSaving ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Save className="h-4 w-4" />
           )}
-          {isSaving ? "Saving..." : "Save"}
         </Button>
 
         <Button

@@ -22,18 +22,48 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+*~
+.*.swp
+.*.swo
+
+# Claude-related files
+CLAUDE.md
+.claude/
+claude-artifacts/
+*.claude.md
+.claude-session
+.claude-history
+.aider*
+.aider.chat.history.md
+.aider.input.history
+
+# AI/LLM related
+.cursor/
+.continue/
+.copilot/
+.github/copilot*
 
 # Environment files
 .env
 .env.*
 !.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Coverage directory used by testing tools
 coverage
+*.test.js
+*.spec.js
+.nyc_output
 
 # Temporary files
 *.tmp
 *.temp
+tmp/
+temp/
+.tmp/
 
 # Build files
 build
@@ -41,6 +71,7 @@ out
 
 # TypeScript cache
 *.tsbuildinfo
+.tsc-output/
 
 # Optional npm cache directory
 .npm
@@ -51,3 +82,96 @@ out
 # VitePress
 docs/.vitepress/cache
 docs/.vitepress/dist
+
+# Project specific
+backend/projects/*
+!backend/projects/.gitkeep
+backend/logs/
+backend/dist/
+backend/.env
+backend/node_modules/
+
+# Docker
+*.pid
+*.seed
+*.pid.lock
+docker-compose.override.yml
+
+# SSL certificates (should not be in repo)
+*.pem
+*.key
+*.crt
+*.cer
+/etc/letsencrypt/
+
+# Cache files
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.vuepress/dist
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+.yarn-integrity
+
+# Package manager files
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.pnpm-store/
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# Supabase
+**/supabase/.branches
+**/supabase/.temp
+
+# User uploaded content
+uploads/
+public/uploads/
+
+# Generated files
+generated/
+.generated/
+
+# Backup files
+*.backup
+*.bak
+backup/
+
+# OS files
+Thumbs.db
+desktop.ini
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# Optional stylelint cache
+.stylelintcache

@@ -378,7 +378,8 @@ export class PTBBuilder {
       case 'gas':
         return 'tx.gas';
       case 'object':
-        return `"${arg.value}"`;
+        // Objects must be passed using tx.object() in PTBs
+        return `tx.object("${arg.value}")`;
       default:
         return 'undefined';
     }
@@ -449,7 +450,8 @@ export class PTBBuilder {
       case 'gas':
         return tx.gas;
       case 'object':
-        return arg.value;
+        // Ensure we pass an object reference, not a raw string
+        return tx.object(String(arg.value));
       default:
         return undefined;
     }

@@ -16,7 +16,7 @@ module counter::counter {
         owner: address,
     }
 
-    /// Event emitted when counter value changes
+    /// Event emitted when counter value changess
     public struct CounterUpdated has copy, drop {
         old_value: u64,
         new_value: u64,

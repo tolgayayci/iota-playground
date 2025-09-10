@@ -13,6 +13,9 @@ import {
   ArrowUpDown,
   FunctionSquare,
   Link,
+  Send,
+  Split,
+  Merge,
 } from 'lucide-react';
 import { PTBCommand } from '@/components/views/PTBBuilderV3';
 import {
@@ -27,8 +30,10 @@ interface PTBCommandNodeProps {
   isExpanded: boolean;
   validationErrors: string[];
   previousCommands: PTBCommand[];
+  totalCommands: number;
   onToggleExpand: () => void;
   onUpdate: (command: PTBCommand) => void;
+  onEdit?: () => void;
   onDelete: () => void;
   onMove: (direction: 'up' | 'down') => void;
   modules: any[];
@@ -41,29 +46,66 @@ export function PTBCommandNode({
   isExpanded,
   validationErrors,
   previousCommands,
+  totalCommands,
   onToggleExpand,
   onUpdate,
+  onEdit,
   onDelete,
   onMove,
   modules,
   selectedPackage,
 }: PTBCommandNodeProps) {
-  const [isEditing, setIsEditing] = useState(false);
   const hasErrors = validationErrors.length > 0;
 
   const getCommandIcon = () => {
-    return <FunctionSquare className="h-4 w-4" />;
+    switch (command.type) {
+      case 'MoveCall':
+        return <FunctionSquare className="h-4 w-4" />;
+      case 'TransferObjects':
+        return <Send className="h-4 w-4" />;
+      case 'SplitCoins':
+        return <Split className="h-4 w-4" />;
+      case 'MergeCoins':
+        return <Merge className="h-4 w-4" />;
+      default:
+        return <FunctionSquare className="h-4 w-4" />;
+    }
   };
 
   const getCommandColor = () => {
-    return 'bg-blue-500/10 text-blue-600 border-blue-200/50';
+    switch (command.type) {
+      case 'MoveCall':
+        return 'bg-blue-500/10 text-blue-600 border-blue-200/50';
+      case 'TransferObjects':
+        return 'bg-green-500/10 text-green-600 border-green-200/50';
+      case 'SplitCoins':
+        return 'bg-purple-500/10 text-purple-600 border-purple-200/50';
+      case 'MergeCoins':
+        return 'bg-orange-500/10 text-orange-600 border-orange-200/50';
+      default:
+        return 'bg-gray-500/10 text-gray-600 border-gray-200/50';
+    }
   };
 
   const getCommandSummary = () => {
-    return `${command.module}::${command.function}`;
+    switch (command.type) {
+      case 'MoveCall':
+        return `${(command as any).module}::${(command as any).function}`;
+      case 'TransferObjects':
+        const transferCmd = command as any;
+        return `Transfer ${transferCmd.objects?.length || 0} object(s)`;
+      case 'SplitCoins':
+        const splitCmd = command as any;
+        return `Split into ${splitCmd.amounts?.length || 0} amount(s)`;
+      case 'MergeCoins':
+        const mergeCmd = command as any;
+        return `Merge ${mergeCmd.sources?.length || 0} source(s)`;
+      default:
+        return command.type;
+    }
   };
 
-  const formatArgument = (arg: any): string => {
+  const formatArgument = (arg: any): React.ReactNode => {
     if (!arg) return 'Not set';
     if (typeof arg === 'string') return arg;
     
@@ -89,7 +131,24 @@ export function PTBCommandNode({
         const displayValue = arg.value.length > 20 
           ? `${arg.value.slice(0, 10)}...${arg.value.slice(-8)}` 
           : arg.value;
-        return `🔷 Object: ${displayValue}`;
+        
+        // Make object ID clickable to open in explorer
+        const explorerUrl = `https://explorer.iota.org/object/${arg.value}`;
+        
+        return (
+          <span className="inline-flex items-center gap-1">
+            <span>🔷 Object:</span>
+            <a
+              href={explorerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-700 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {displayValue}
+            </a>
+          </span>
+        );
       }
       return '🔷 Object (not set)';
     }
@@ -102,7 +161,24 @@ export function PTBCommandNode({
         const addr = arg.value.length > 20 
           ? `${arg.value.slice(0, 10)}...${arg.value.slice(-8)}` 
           : arg.value;
-        return `📍 Address: ${addr}`;
+        
+        // Make address clickable to open in explorer
+        const explorerUrl = `https://explorer.iota.org/address/${arg.value}`;
+        
+        return (
+          <span className="inline-flex items-center gap-1">
+            <span>📍 Address:</span>
+            <a
+              href={explorerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-700 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {addr}
+            </a>
+          </span>
+        );
       }
       if (arg.paramType === 'bool') {
         return arg.value === 'true' ? '✅ True' : '❌ False';
@@ -186,7 +262,7 @@ export function PTBCommandNode({
                   <ChevronUp className="h-3.5 w-3.5" />
                 </Button>
               )}
-              {index < previousCommands.length && (
+              {index < totalCommands - 1 && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -200,7 +276,8 @@ export function PTBCommandNode({
                 variant="ghost"
                 size="sm"
                 className="h-7 w-7 p-0"
-                onClick={() => setIsEditing(!isEditing)}
+                onClick={onEdit}
+                disabled={!onEdit}
               >
                 <Edit2 className="h-3.5 w-3.5" />
               </Button>
@@ -249,9 +326,9 @@ export function PTBCommandNode({
                 {command.arguments?.map((arg, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs">
                     <span className="text-muted-foreground">arg{i}:</span>
-                    <code className="px-1.5 py-0.5 bg-muted rounded">
+                    <div className="px-1.5 py-0.5 bg-muted rounded">
                       {formatArgument(arg)}
-                    </code>
+                    </div>
                   </div>
                 ))}
                 {command.typeArguments?.length > 0 && (

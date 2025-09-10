@@ -186,7 +186,7 @@ export function EnhancedDeployDialog({
           packageId: result.packageId,
           transactionDigest: result.transactionDigest,
           explorerUrl: selectedNetwork === 'testnet'
-            ? `https://explorer.iota.cafe/txblock/${result.transactionDigest}`
+            ? `https://explorer.iota.org/txblock/${result.transactionDigest}`
             : `https://explorer.iota.org/txblock/${result.transactionDigest}`,
           gasUsed: result.gasUsed,
           gasCost: result.gasCost,
@@ -264,7 +264,7 @@ export function EnhancedDeployDialog({
             packageId: publishedPackage?.packageId,
             transactionDigest: result.digest,
             explorerUrl: selectedNetwork === 'testnet'
-              ? `https://explorer.iota.cafe/txblock/${result.digest}`
+              ? `https://explorer.iota.org/txblock/${result.digest}`
               : `https://explorer.iota.org/txblock/${result.digest}`,
             gasUsed: result.effects?.gasUsed?.computationCost,
             gasCost: result.effects?.gasUsed?.storageCost,

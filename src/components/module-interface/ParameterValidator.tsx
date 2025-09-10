@@ -20,6 +20,7 @@ import {
 import { cn } from '@/lib/utils';
 import { validateMoveType, suggestValidValue } from '@/lib/moveTypeValidator';
 import { ObjectBrowser } from './inputs/ObjectBrowser';
+import { useWallet } from '@/contexts/WalletContext';
 
 interface ParameterValidatorProps {
   name: string;
@@ -93,8 +94,8 @@ const TYPE_RULES: Record<string, {
   },
   'address': {
     pattern: /^0x[a-fA-F0-9]{64}$/,
-    example: '0x0000000000000000000000000000000000000000000000000000000000000001',
-    description: 'IOTA address (66 characters starting with 0x)',
+    example: '0x000...001',
+    description: 'IOTA address (0x...)',
   },
   'string': {
     example: '"Hello, World!"',
@@ -114,6 +115,7 @@ export function ParameterValidator({
   index = 0,
   packageId,
 }: ParameterValidatorProps) {
+  const { currentAccount, playgroundAddress } = useWallet();
   const [validation, setValidation] = useState<ValidationState>({ isValid: true });
   const [isFocused, setIsFocused] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
@@ -352,7 +354,14 @@ export function ParameterValidator({
   };
 
   const handleExampleClick = () => {
-    if (rules.example) {
+    if (baseType === 'address') {
+      // For address type, use connected wallet address
+      const walletAddress = currentAccount?.address || playgroundAddress;
+      if (walletAddress) {
+        onChange(walletAddress);
+        setHasInteracted(true);
+      }
+    } else if (rules.example) {
       onChange(rules.example);
       setHasInteracted(true);
     }
@@ -375,9 +384,10 @@ export function ParameterValidator({
             onChange(e.target.value);
             setHasInteracted(true);
           }}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          placeholder={placeholder || `Enter ${type}`}
+          placeholder={placeholder || 
+            (isVector ? `e.g. [1, 2, 3]` : 
+             baseType === 'string' ? `Enter text` :
+             `Enter ${type}`)}
           className={cn(
             'font-mono text-sm min-h-[80px]',
             validation.error && hasInteracted && 'border-red-500',
@@ -414,7 +424,7 @@ export function ParameterValidator({
       );
     }
 
-    // For object/reference types, add Browse button
+    // For object/reference types, add Packages button
     const isObjectType = normalizedType.includes('object') || 
                         normalizedType.includes('&') || 
                         normalizedType.includes('::');
@@ -429,9 +439,7 @@ export function ParameterValidator({
               onChange(e.target.value);
               setHasInteracted(true);
             }}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
-            placeholder={placeholder || `Enter object ID (0x...)`}
+            placeholder={placeholder || `Object ID (0x...)`}
             className={cn(
               'font-mono flex-1',
               validation.error && hasInteracted && 'border-red-500',
@@ -443,11 +451,10 @@ export function ParameterValidator({
           <Button
             type="button"
             variant="outline"
-            size="sm"
             onClick={() => setShowObjectBrowser(true)}
-            className="gap-1.5"
+            className="gap-1 h-9 px-3 text-sm"
           >
-            <FolderOpen className="h-4 w-4" />
+            <FolderOpen className="h-3.5 w-3.5" />
             Browse
           </Button>
         </div>
@@ -463,9 +470,12 @@ export function ParameterValidator({
           onChange(e.target.value);
           setHasInteracted(true);
         }}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setIsFocused(false)}
-        placeholder={placeholder || `Enter ${type}`}
+        placeholder={placeholder || 
+          (baseType === 'address' ? `0x...` : 
+           baseType === 'bool' ? `true or false` :
+           baseType === 'string' ? `Enter text` :
+           normalizedType.includes('&') ? `Object ID (0x...)` :
+           rules.example || `Enter value`)}
         className={cn(
           'font-mono',
           validation.error && hasInteracted && 'border-red-500',
@@ -478,113 +488,69 @@ export function ParameterValidator({
   };
 
   return (
-    <div className="space-y-2">
-      {/* Parameter Header */}
-      <div className="flex items-center justify-between">
-        <Label className="flex items-center gap-2">
-          <span className="font-medium">{name || `Parameter ${index + 1}`}</span>
-          <Badge variant="outline" className="text-xs font-mono">
-            {type}
-          </Badge>
-          {required && <span className="text-red-500">*</span>}
+    <div className="space-y-2 p-3 rounded-lg border bg-muted/10">
+      {/* Simplified Parameter Header */}
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-sm font-medium flex-shrink-0">
+          {name || `arg${index}`}
+          {required && <span className="text-red-500 ml-1">*</span>}
         </Label>
         
-        {/* Type Info */}
-        {rules.description && (
-          <div className="flex items-center gap-1">
-            <HelpCircle className="h-3 w-3 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">{rules.description}</span>
-          </div>
-        )}
+        {/* Type as subtle text with truncation */}
+        <span 
+          className="text-xs text-muted-foreground font-mono truncate max-w-[200px]" 
+          title={type}
+        >
+          {type.length > 30 ? `${type.slice(0, 12)}...${type.slice(-12)}` : type}
+        </span>
       </div>
 
-      {/* Input Field */}
+      {/* Input Field with integrated validation */}
       <div className="relative">
         {getInputComponent()}
-        
-        {/* Validation Icon */}
-        {hasInteracted && (
-          <div className="absolute right-2 top-1/2 -translate-y-1/2">
-            {validation.isValidating && (
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            )}
-            {!validation.isValidating && validation.isValid && value && (
-              <CheckCircle className="h-4 w-4 text-green-500" />
-            )}
-            {!validation.isValidating && validation.error && (
-              <AlertCircle className="h-4 w-4 text-red-500" />
-            )}
-            {!validation.isValidating && validation.warning && !validation.error && (
-              <AlertTriangle className="h-4 w-4 text-yellow-500" />
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Helper Actions */}
-      {(rules.example || validation.suggestion) && (
-        <div className="flex items-center gap-2">
-          {rules.example && (
+      {/* Simplified Helper - Type description and example */}
+      {(rules.description || rules.example || baseType === 'address') && (
+        <div className="flex items-start justify-between text-xs text-muted-foreground">
+          <span>{rules.description}</span>
+          {(rules.example || baseType === 'address') && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="h-7 text-xs"
+              className="h-6 px-2 -mt-1"
               onClick={handleExampleClick}
             >
               <Code className="h-3 w-3 mr-1" />
-              Use Example: {rules.example}
+              {baseType === 'address' ? (
+                currentAccount?.address ? 
+                  `${currentAccount.address.slice(0, 6)}...${currentAccount.address.slice(-4)}` :
+                  playgroundAddress ? 
+                    `${playgroundAddress.slice(0, 6)}...${playgroundAddress.slice(-4)}` :
+                    '0x000...001'
+              ) : rules.example}
             </Button>
           )}
-          {validation.suggestion && hasInteracted && (
-            <span className="text-xs text-muted-foreground">{validation.suggestion}</span>
-          )}
         </div>
       )}
 
-      {/* Validation Messages */}
-      {hasInteracted && (
-        <>
-          {validation.error && (
-            <Alert variant="destructive" className="py-2">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="text-xs">{validation.error}</AlertDescription>
-            </Alert>
-          )}
-          {validation.warning && !validation.error && (
-            <Alert className="py-2 border-yellow-500/50">
-              <AlertTriangle className="h-4 w-4 text-yellow-500" />
-              <AlertDescription className="text-xs">{validation.warning}</AlertDescription>
-            </Alert>
-          )}
-        </>
-      )}
-
-      {/* Type-specific hints */}
-      {isFocused && !hasInteracted && (
-        <div className="flex items-start gap-2 p-2 bg-muted rounded-md">
-          <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
-          <div className="text-xs text-muted-foreground space-y-1">
-            {isVector && (
-              <p>Enter as JSON array, e.g., {baseType === 'u8' ? '[1, 2, 3]' : '["item1", "item2"]'}</p>
-            )}
-            {isReference && (
-              <p>This is a reference type. Enter the ID of an existing object.</p>
-            )}
-            {isMutable && (
-              <p>This parameter can modify the referenced object.</p>
-            )}
-            {baseType === 'address' && (
-              <p>Tip: You can use your connected wallet address or any valid IOTA address.</p>
-            )}
-            {(baseType === 'u64' || baseType === 'u128') && (
-              <p>Note: 1 IOTA = 1,000,000,000 units (smallest denomination)</p>
-            )}
-          </div>
+      {/* Simplified Validation Messages */}
+      {hasInteracted && validation.error && (
+        <div className="flex items-center gap-1.5 text-xs text-red-600">
+          <AlertCircle className="h-3 w-3" />
+          <span>{validation.error}</span>
         </div>
       )}
+      {hasInteracted && validation.warning && !validation.error && (
+        <div className="flex items-center gap-1.5 text-xs text-yellow-600">
+          <AlertTriangle className="h-3 w-3" />
+          <span>{validation.warning}</span>
+        </div>
+      )}
+
       
-      {/* Object Browser Modal */}
+      {/* Object Packages Modal */}
       <ObjectBrowser
         open={showObjectBrowser}
         onOpenChange={setShowObjectBrowser}

@@ -4,24 +4,20 @@ import {
   XCircle, 
   ExternalLink, 
   Copy, 
-  ChevronDown,
-  ChevronRight,
-  Zap,
-  Package,
-  Calendar,
   Hash,
   Coins,
-  FileJson,
   Download,
-  Code2,
+  FileJson,
   AlertCircle,
-  Activity
+  Activity,
+  Info,
+  Package,
+  ChevronDown
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -72,22 +68,9 @@ export function ExecutionResultDisplay({
   result, 
   className,
   onClose,
-  showCodeGeneration = true
+  showCodeGeneration = false
 }: ExecutionResultDisplayProps) {
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['overview']));
   const { toast } = useToast();
-
-  const toggleSection = (section: string) => {
-    setExpandedSections(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(section)) {
-        newSet.delete(section);
-      } else {
-        newSet.add(section);
-      }
-      return newSet;
-    });
-  };
 
   const copyToClipboard = async (content: string, label: string = 'Content') => {
     await navigator.clipboard.writeText(content);
@@ -98,45 +81,14 @@ export function ExecutionResultDisplay({
   };
 
   const formatGasAmount = (amount: string | number | undefined): string => {
-    if (!amount) return '0';
+    console.log('🔍 formatGasAmount - input:', amount, 'type:', typeof amount);
+    if (!amount || amount === '0') return '0.0000 IOTA';
     const num = typeof amount === 'string' ? parseInt(amount) : amount;
+    console.log('🔍 formatGasAmount - parsed num:', num);
+    if (isNaN(num) || num === 0) return '0.0000 IOTA';
     const iota = num / 1_000_000_000;
+    console.log('🔍 formatGasAmount - iota:', iota);
     return `${iota.toFixed(4)} IOTA`;
-  };
-
-  const formatTimestamp = (timestamp?: string): string => {
-    if (!timestamp) return new Date().toISOString();
-    return new Date(timestamp).toLocaleString();
-  };
-
-  const generateSDKCode = (): string => {
-    if (!result.functionName || !result.packageId) return '';
-    
-    const params = result.parameters?.map((p, i) => `  args[${i}], // ${JSON.stringify(p)}`).join('\n') || '';
-    
-    return `import { Transaction } from '@iota/iota-sdk/transactions';
-import { IotaClient, getFullnodeUrl } from '@iota/iota-sdk/client';
-
-const client = new IotaClient({ url: getFullnodeUrl('${result.network || 'testnet'}') });
-const tx = new Transaction();
-
-// Add the move call
-tx.moveCall({
-  target: '${result.packageId}::${result.moduleName || 'module'}::${result.functionName}',
-  arguments: [
-${params}
-  ],
-});
-
-// Execute transaction
-const result = await client.signAndExecuteTransaction({
-  transaction: tx,
-  signer: keypair,
-  options: {
-    showEffects: true,
-    showObjectChanges: true,
-  }
-});`;
   };
 
   const exportResults = () => {
@@ -189,60 +141,43 @@ const result = await client.signAndExecuteTransaction({
 
   return (
     <div className={cn("space-y-4", className)}>
-      {/* Status Alert */}
-      {result.status === 'success' ? (
-        <Alert className="border-green-200 bg-green-50 dark:bg-green-950/20">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertDescription className="text-green-900 dark:text-green-200">
-            Transaction executed successfully
-          </AlertDescription>
-        </Alert>
-      ) : (
-        <Alert variant="destructive">
-          <XCircle className="h-4 w-4" />
-          <AlertDescription>
-            {result.error || 'Transaction failed'}
-          </AlertDescription>
-        </Alert>
-      )}
+      {/* Clean Status Section */}
+      <div className={cn(
+        "border rounded-lg p-4",
+        result.status === 'success' 
+          ? "bg-green-50/50 dark:bg-green-950/10 border-green-200 dark:border-green-800"
+          : "bg-red-50/50 dark:bg-red-950/10 border-red-200 dark:border-red-800"
+      )}>
+        <div className="flex items-start gap-3">
+          {result.status === 'success' ? (
+            <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5" />
+          ) : (
+            <XCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
+          )}
+          
+          <div className="flex-1 space-y-3">
+            {/* Status Text */}
+            <div>
+              <p className={cn(
+                "text-sm font-medium",
+                result.status === 'success' 
+                  ? "text-green-900 dark:text-green-100"
+                  : "text-red-900 dark:text-red-100"
+              )}>
+                {result.status === 'success' 
+                  ? 'Transaction executed successfully'
+                  : result.error || 'Transaction failed'
+                }
+              </p>
+            </div>
 
-      <Tabs defaultValue="details" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="raw">Raw Data</TabsTrigger>
-          {showCodeGeneration && <TabsTrigger value="code">Code</TabsTrigger>}
-        </TabsList>
-
-        <TabsContent value="details" className="space-y-4">
-          {/* Transaction Overview */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <Hash className="h-4 w-4" />
-                  Transaction Overview
-                </span>
-                {result.txHash && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => window.open(
-                      `https://explorer.iota.org/txblock/${result.txHash}?network=${result.network || 'testnet'}`,
-                      '_blank'
-                    )}
-                  >
-                    <ExternalLink className="h-3 w-3 mr-1" />
-                    Explorer
-                  </Button>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {result.txHash && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Transaction Hash</span>
+            {/* Transaction Details */}
+            {result.status === 'success' && result.txHash && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-4 text-sm">
                   <div className="flex items-center gap-2">
-                    <code className="text-xs font-mono bg-muted px-2 py-1 rounded">
+                    <Hash className="h-3.5 w-3.5 text-muted-foreground" />
+                    <code className="font-mono text-xs">
                       {result.txHash.slice(0, 8)}...{result.txHash.slice(-6)}
                     </code>
                     <Button
@@ -254,280 +189,171 @@ const result = await client.signAndExecuteTransaction({
                       <Copy className="h-3 w-3" />
                     </Button>
                   </div>
-                </div>
-              )}
-              
-              {result.timestamp && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Timestamp</span>
-                  <span className="text-sm">{formatTimestamp(result.timestamp)}</span>
-                </div>
-              )}
-
-              {result.network && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Network</span>
-                  <Badge variant={result.network === 'mainnet' ? 'destructive' : 'secondary'}>
-                    {result.network}
-                  </Badge>
-                </div>
-              )}
-
-              {result.executionTime && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Execution Time</span>
-                  <span className="text-sm">{result.executionTime}ms</span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Gas Information */}
-          {(result.gasUsed || result.computationCost) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Zap className="h-4 w-4" />
-                  Gas Usage
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {result.gasUsed && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Total Gas Used</span>
-                    <span className="text-sm font-medium">{formatGasAmount(result.gasUsed)}</span>
-                  </div>
-                )}
-                
-                {result.computationCost && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Computation Cost</span>
-                    <span className="text-sm">{formatGasAmount(result.computationCost)}</span>
-                  </div>
-                )}
-                
-                {result.storageCost && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Storage Cost</span>
-                    <span className="text-sm">{formatGasAmount(result.storageCost)}</span>
-                  </div>
-                )}
-                
-                {result.storageRebate && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Storage Rebate</span>
-                    <span className="text-sm text-green-600">{formatGasAmount(result.storageRebate)}</span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Return Values */}
-          {result.returnValues && result.returnValues.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Package className="h-4 w-4" />
-                  Return Values
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {result.returnValues.map((value, index) => (
-                    <div key={index} className="p-3 bg-muted/50 rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium">Value {index + 1}</span>
-                        {typeof value === 'object' && value.type && (
-                          <Badge variant="outline" className="text-xs">
-                            {value.type}
-                          </Badge>
-                        )}
-                      </div>
-                      <pre className="text-xs font-mono overflow-x-auto">
-                        {typeof value === 'object' && value.value !== undefined
-                          ? JSON.stringify(value.value, null, 2)
-                          : JSON.stringify(value, null, 2)}
-                      </pre>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Object Changes */}
-          {result.objectChanges && result.objectChanges.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <Package className="h-4 w-4" />
-                    Object Changes
-                  </span>
-                  <Badge variant="secondary">{result.objectChanges.length}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                  {result.objectChanges.map((change: any, index: number) => (
-                    <div key={index} className="p-3 bg-muted/50 rounded-lg space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Badge variant={
-                          change.type === 'created' ? 'default' :
-                          change.type === 'mutated' ? 'secondary' :
-                          change.type === 'deleted' ? 'destructive' : 'outline'
-                        }>
-                          {change.type}
-                        </Badge>
-                        {change.objectType && (
-                          <span className="text-xs font-mono text-muted-foreground">
-                            {change.objectType.split('::').pop()}
-                          </span>
-                        )}
-                      </div>
-                      {change.objectId && (
-                        <div className="flex items-center gap-2">
-                          <code className="text-xs font-mono bg-background px-2 py-1 rounded flex-1 overflow-x-auto">
-                            {change.objectId}
-                          </code>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => copyToClipboard(change.objectId, 'Object ID')}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Events */}
-          {result.events && result.events.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <Activity className="h-4 w-4" />
-                    Events
-                  </span>
-                  <Badge variant="secondary">{result.events.length}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                  {result.events.map((event: any, index: number) => (
-                    <div key={index} className="p-3 bg-muted/50 rounded-lg">
-                      <div className="mb-2">
-                        <span className="text-xs font-medium">{event.type || `Event ${index + 1}`}</span>
-                      </div>
-                      <pre className="text-xs font-mono overflow-x-auto">
-                        {JSON.stringify(event.parsedJson || event, null, 2)}
-                      </pre>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Balance Changes */}
-          {result.balanceChanges && result.balanceChanges.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <Coins className="h-4 w-4" />
-                    Balance Changes
-                  </span>
-                  <Badge variant="secondary">{result.balanceChanges.length}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {result.balanceChanges.map((change: any, index: number) => (
-                    <div key={index} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                      <div>
-                        <div className="text-sm font-medium">{change.coinType?.split('::').pop() || 'IOTA'}</div>
-                        <code className="text-xs text-muted-foreground">{change.owner}</code>
-                      </div>
-                      <span className={cn(
-                        "text-sm font-medium",
-                        parseInt(change.amount) > 0 ? "text-green-600" : "text-red-600"
-                      )}>
-                        {parseInt(change.amount) > 0 ? '+' : ''}{formatGasAmount(change.amount)}
+                  
+                  {result.gasUsed && (
+                    <div className="flex items-center gap-2">
+                      <Coins className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">
+                        {formatGasAmount(result.gasUsed)}
                       </span>
                     </div>
-                  ))}
+                  )}
                 </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        <TabsContent value="raw" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-medium">Raw Transaction Data</CardTitle>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => copyToClipboard(JSON.stringify(result, null, 2), 'Raw data')}
-                >
-                  <Copy className="h-3 w-3 mr-1" />
-                  Copy
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportResults}
-                >
-                  <Download className="h-3 w-3 mr-1" />
-                  Export
-                </Button>
+                
+                {/* Action Buttons */}
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open(
+                      `https://explorer.iota.org/txblock/${result.txHash}?network=${result.network || 'testnet'}`,
+                      '_blank'
+                    )}
+                    className="h-7"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                    View on Explorer
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportResults}
+                    className="h-7"
+                  >
+                    <Download className="h-3.5 w-3.5 mr-1.5" />
+                    Export
+                  </Button>
+                </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <pre className="text-xs font-mono p-4 bg-muted/50 rounded-lg overflow-x-auto max-h-[500px] overflow-y-auto">
-                {JSON.stringify(result, null, 2)}
-              </pre>
-            </CardContent>
-          </Card>
-        </TabsContent>
+            )}
+          </div>
+        </div>
+      </div>
 
-        {showCodeGeneration && (
-          <TabsContent value="code" className="space-y-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Code2 className="h-4 w-4" />
-                  TypeScript SDK Code
-                </CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => copyToClipboard(generateSDKCode(), 'SDK code')}
-                >
-                  <Copy className="h-3 w-3 mr-1" />
-                  Copy
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <pre className="text-xs font-mono p-4 bg-muted/50 rounded-lg overflow-x-auto">
-                  <code>{generateSDKCode()}</code>
+      {/* Return Values */}
+      {result.returnValues && result.returnValues.length > 0 && (
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Return Values
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2">
+              {result.returnValues.map((value, index) => (
+                <div key={index} className="p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-muted-foreground">Value {index + 1}</span>
+                    {typeof value === 'object' && value.type && (
+                      <Badge variant="outline" className="text-xs h-5">
+                        {value.type}
+                      </Badge>
+                    )}
+                  </div>
+                  <pre className="text-xs font-mono overflow-x-auto">
+                    {typeof value === 'object' && value.value !== undefined
+                      ? JSON.stringify(value.value, null, 2)
+                      : JSON.stringify(value, null, 2)}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Object Changes */}
+      {result.objectChanges && result.objectChanges.length > 0 && (
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-sm font-medium flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Package className="h-4 w-4" />
+                Object Changes
+              </span>
+              <Badge variant="secondary" className="text-xs">{result.objectChanges.length}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2 max-h-[200px] overflow-y-auto">
+              {result.objectChanges.map((change: any, index: number) => (
+                <div key={index} className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                  <div className="flex items-center gap-2">
+                    <Badge variant={
+                      change.type === 'created' ? 'default' :
+                      change.type === 'mutated' ? 'secondary' :
+                      change.type === 'deleted' ? 'destructive' : 'outline'
+                    } className="text-xs">
+                      {change.type}
+                    </Badge>
+                    <code className="text-xs font-mono text-muted-foreground">
+                      {change.objectId?.slice(0, 8)}...
+                    </code>
+                  </div>
+                  {change.objectType && (
+                    <span className="text-xs text-muted-foreground">
+                      {change.objectType.split('::').pop()}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Raw Data Accordion - Same style as history */}
+      <Accordion type="single" collapsible className="w-full">
+        <AccordionItem value="raw-data" className="border rounded-lg">
+          <AccordionTrigger className="hover:no-underline px-4">
+            <div className="flex items-center gap-2">
+              <FileJson className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Raw Transaction Data</span>
+            </div>
+          </AccordionTrigger>
+          <AccordionContent>
+            <div className="border-t">
+              <div className="flex items-center justify-between p-3 border-b bg-muted/30">
+                <span className="text-xs text-muted-foreground">Complete transaction response</span>
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => copyToClipboard(JSON.stringify(result, null, 2), 'Raw data')}
+                  >
+                    <Copy className="h-3 w-3 mr-1" />
+                    Copy
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={exportResults}
+                  >
+                    <Download className="h-3 w-3 mr-1" />
+                    Export
+                  </Button>
+                </div>
+              </div>
+              <div className="p-4 bg-muted/10">
+                <pre className="text-xs font-mono overflow-x-auto max-h-[300px] overflow-y-auto">
+                  {JSON.stringify(result, null, 2)}
                 </pre>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
-      </Tabs>
+              </div>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+
+      {/* History Reference - Subtle */}
+      <div className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
+        <Info className="h-3.5 w-3.5 text-muted-foreground" />
+        <p className="text-xs text-muted-foreground">
+          This transaction has been saved to your history for future reference.
+        </p>
+      </div>
     </div>
   );
 }

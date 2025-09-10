@@ -105,7 +105,7 @@ export function CompactFunctionList({
                   onMouseEnter={() => setHoveredFunction(funcId)}
                   onMouseLeave={() => setHoveredFunction(null)}
                   className={cn(
-                    "group px-4 py-3.5 hover:bg-muted/50 transition-colors",
+                    "group px-4 py-4 hover:bg-muted/50 transition-colors",
                     "border-l-2",
                     isEntry && "border-l-green-500",
                     func.visibility === 'private' && "border-l-red-500",

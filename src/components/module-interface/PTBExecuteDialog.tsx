@@ -741,10 +741,10 @@ export function PTBExecuteDialog({
                         setCurrentParameterForObject(null);
                         setShowObjectBrowser(true);
                       }}
-                      title="Browse objects"
+                      title="Browse packages"
                     >
                       <Package className="h-3 w-3 mr-1" />
-                      Objects
+                      Packages
                     </Button>
                   </div>
                 </div>

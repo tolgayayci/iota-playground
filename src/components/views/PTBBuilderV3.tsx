@@ -33,16 +33,50 @@ interface PTBBuilderV3Props {
   isSharedView?: boolean;
 }
 
-export interface PTBCommand {
+// Base interface for all PTB commands
+export interface PTBCommandBase {
   id: string;
+  description?: string;
+}
+
+// MoveCall command
+export interface PTBMoveCallCommand extends PTBCommandBase {
   type: 'MoveCall';
   target: string;
   module: string;
   function: string;
   arguments?: any[];
   typeArguments?: string[];
-  description?: string;
+  isEntry?: boolean;
 }
+
+// TransferObjects command
+export interface PTBTransferObjectsCommand extends PTBCommandBase {
+  type: 'TransferObjects';
+  objects: any[];
+  recipient: any;
+}
+
+// SplitCoins command
+export interface PTBSplitCoinsCommand extends PTBCommandBase {
+  type: 'SplitCoins';
+  coin: any;
+  amounts: any[];
+}
+
+// MergeCoins command
+export interface PTBMergeCoinsCommand extends PTBCommandBase {
+  type: 'MergeCoins';
+  destination: any;
+  sources: any[];
+}
+
+// Union type for all commands
+export type PTBCommand = 
+  | PTBMoveCallCommand
+  | PTBTransferObjectsCommand
+  | PTBSplitCoinsCommand
+  | PTBMergeCoinsCommand;
 
 interface ModuleInfo {
   name: string;
@@ -284,6 +318,7 @@ export function PTBBuilderV3({ projectId, deployedPackageId, isSharedView = fals
             size="sm"
             onClick={() => setActiveView('builder')}
           >
+            <Zap className="h-4 w-4 mr-1" />
             Builder
           </Button>
           <Button
@@ -309,7 +344,7 @@ export function PTBBuilderV3({ projectId, deployedPackageId, isSharedView = fals
           />
 
           {/* Commands Area with new Flow Interface */}
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             <PTBCommandFlow
               commands={commands}
               onCommandsChange={setCommands}
@@ -377,6 +412,16 @@ export function PTBBuilderV3({ projectId, deployedPackageId, isSharedView = fals
             projectId={projectId} 
             selectedPackage={selectedPackage}
             refreshKey={historyRefreshKey}
+            onReplay={(commands: PTBCommand[]) => {
+              // Load commands into builder
+              setCommands(commands);
+              // Switch to builder view
+              setActiveView('builder');
+              toast({
+                title: "Commands Loaded",
+                description: `Loaded ${commands.length} command(s) from history. You can now edit and execute them.`,
+              });
+            }}
           />
         </>
       )}

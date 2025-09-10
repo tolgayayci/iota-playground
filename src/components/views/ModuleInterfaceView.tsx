@@ -273,7 +273,7 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
             <p className="text-xs text-muted-foreground">
               {isSharedView 
                 ? "View deployed Move modules and execution history"
-                : "Execute functions from your deployed Move package on IOTA"
+                : "Interact with your Move objects"
               }
             </p>
           </div>
@@ -282,7 +282,6 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
           <Button
             variant="outline"
             size="sm"
-            className="gap-2"
             onClick={() => {
               console.log('🔄 Manual refresh triggered, clearing cache');
               // Clear the module interface cache to force refetch
@@ -293,7 +292,6 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
             disabled={isLoading}
           >
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
           </Button>
           <Button
             variant={activeView === 'interface' ? 'secondary' : 'ghost'}
@@ -324,55 +322,15 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
             error={error}
             deployments={deployments}
             isLoading={isLoading}
+            deploymentMetadata={deploymentMetadata}
+            selectedDeployment={selectedDeployment}
           />
           
-          {/* Deployment Badges */}
+          {/* Functions Header and Filters */}
           {selectedDeployment && (
             <div className="px-4 py-3 border-b bg-muted/20 flex items-center justify-between">
-              <div className="flex items-center gap-2 flex-wrap">
-                {/* Wallet Type Badge */}
-                <Badge variant={deploymentMetadata.walletType === 'playground' ? 'default' : 'secondary'} className="gap-1">
-                  <Wallet className="h-3 w-3" />
-                  {deploymentMetadata.walletType === 'playground' ? 'Playground Wallet' : 'External Wallet'}
-                </Badge>
-                
-                {/* Network Badge */}
-                <Badge variant={selectedDeployment.network === 'mainnet' ? 'destructive' : 'outline'} className="gap-1">
-                  <Globe className="h-3 w-3" />
-                  {selectedDeployment.network || 'testnet'}
-                </Badge>
-                
-                {/* Deployer Address Badge - Clickable */}
-                {deploymentMetadata.deployerAddress && (
-                  <Badge 
-                    variant="outline" 
-                    className="gap-1 cursor-pointer hover:bg-muted transition-colors"
-                    onClick={() => {
-                      const explorerUrl = `https://explorer.iota.org/address/${deploymentMetadata.deployerAddress}?network=${selectedDeployment.network || 'testnet'}`;
-                      window.open(explorerUrl, '_blank');
-                    }}
-                  >
-                    <User className="h-3 w-3" />
-                    Deployer: {deploymentMetadata.deployerAddress.slice(0, 6)}...{deploymentMetadata.deployerAddress.slice(-4)}
-                    <ExternalLink className="h-3 w-3 ml-1" />
-                  </Badge>
-                )}
-                
-                {/* Package ID Badge - Clickable */}
-                {selectedDeployment.package_id && (
-                  <Badge 
-                    variant="outline" 
-                    className="gap-1 cursor-pointer hover:bg-muted transition-colors"
-                    onClick={() => {
-                      const explorerUrl = `https://explorer.iota.org/object/${selectedDeployment.package_id}?network=${selectedDeployment.network || 'testnet'}`;
-                      window.open(explorerUrl, '_blank');
-                    }}
-                  >
-                    <Package className="h-3 w-3" />
-                    Package: {selectedDeployment.package_id.slice(0, 6)}...{selectedDeployment.package_id.slice(-4)}
-                    <ExternalLink className="h-3 w-3 ml-1" />
-                  </Badge>
-                )}
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Functions</span>
               </div>
               
               {/* Visibility Filter Badges */}
@@ -541,55 +499,15 @@ export function ModuleInterfaceView({ projectId, isSharedView = false }: ModuleI
             error={error}
             deployments={deployments}
             isLoading={isLoading}
+            deploymentMetadata={deploymentMetadata}
+            selectedDeployment={selectedDeployment}
           />
           
-          {/* Deployment Badges - Same as Interface Tab but with History filters */}
+          {/* History Filters */}
           {selectedDeployment && (
             <div className="px-4 py-3 border-b bg-muted/20 flex items-center justify-between">
-              <div className="flex items-center gap-2 flex-wrap">
-                {/* Wallet Type Badge */}
-                <Badge variant={deploymentMetadata.walletType === 'playground' ? 'default' : 'secondary'} className="gap-1">
-                  <Wallet className="h-3 w-3" />
-                  {deploymentMetadata.walletType === 'playground' ? 'Playground Wallet' : 'External Wallet'}
-                </Badge>
-                
-                {/* Network Badge */}
-                <Badge variant={selectedDeployment.network === 'mainnet' ? 'destructive' : 'outline'} className="gap-1">
-                  <Globe className="h-3 w-3" />
-                  {selectedDeployment.network || 'testnet'}
-                </Badge>
-                
-                {/* Deployer Address Badge - Clickable */}
-                {deploymentMetadata.deployerAddress && (
-                  <Badge 
-                    variant="outline" 
-                    className="gap-1 cursor-pointer hover:bg-muted transition-colors"
-                    onClick={() => {
-                      const explorerUrl = `https://explorer.iota.org/address/${deploymentMetadata.deployerAddress}?network=${selectedDeployment.network || 'testnet'}`;
-                      window.open(explorerUrl, '_blank');
-                    }}
-                  >
-                    <User className="h-3 w-3" />
-                    Deployer: {deploymentMetadata.deployerAddress.slice(0, 6)}...{deploymentMetadata.deployerAddress.slice(-4)}
-                    <ExternalLink className="h-3 w-3 ml-1" />
-                  </Badge>
-                )}
-                
-                {/* Package ID Badge - Clickable */}
-                {selectedDeployment.package_id && (
-                  <Badge 
-                    variant="outline" 
-                    className="gap-1 cursor-pointer hover:bg-muted transition-colors"
-                    onClick={() => {
-                      const explorerUrl = `https://explorer.iota.org/object/${selectedDeployment.package_id}?network=${selectedDeployment.network || 'testnet'}`;
-                      window.open(explorerUrl, '_blank');
-                    }}
-                  >
-                    <Package className="h-3 w-3" />
-                    Package: {selectedDeployment.package_id.slice(0, 6)}...{selectedDeployment.package_id.slice(-4)}
-                    <ExternalLink className="h-3 w-3 ml-1" />
-                  </Badge>
-                )}
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">History</span>
               </div>
               
               {/* History Status Filters */}

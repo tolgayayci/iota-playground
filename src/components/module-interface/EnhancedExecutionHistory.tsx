@@ -42,6 +42,8 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AlertCircle } from 'lucide-react';
 
 interface EnhancedExecutionHistoryProps {
   projectId: string;
@@ -188,15 +190,26 @@ export function EnhancedExecutionHistory({
 
   const generateTypeScriptCode = (call: ExecutionHistory) => {
     const params = call.ptb_config.parameters || [];
-    const paramString = params.map(p => JSON.stringify(p)).join(', ');
+    const paramString = params.map(p => {
+      // Handle different parameter types
+      if (typeof p === 'string' && p.startsWith('0x')) {
+        return `tx.pure.address('${p}')`;
+      } else if (typeof p === 'number') {
+        return `tx.pure.u64(${p})`;
+      } else if (typeof p === 'boolean') {
+        return `tx.pure.bool(${p})`;
+      } else {
+        return `tx.pure('${JSON.stringify(p)}')`;
+      }
+    }).join(',\n    ');
     
     // Break the target string into parts for better readability
     const packageId = call.ptb_config.packageId || '0x...';
     const moduleName = call.ptb_config.moduleName || 'module';
     const functionName = call.ptb_config.functionName || 'function';
     
-    return `import { IotaClient } from '@iota/iota-sdk/client';
-import { TransactionBlock } from '@iota/iota-sdk/transactions';
+    return `import { Transaction } from '@iota/iota-sdk/transactions';
+import { IotaClient, getFullnodeUrl } from '@iota/iota-sdk/client';
 import { Ed25519Keypair } from '@iota/iota-sdk/keypairs/ed25519';
 
 // ==========================================
@@ -204,14 +217,14 @@ import { Ed25519Keypair } from '@iota/iota-sdk/keypairs/ed25519';
 // ==========================================
 
 const client = new IotaClient({ 
-  url: 'https://api.${call.network || 'testnet'}.iota.cafe' 
+  url: getFullnodeUrl('${call.network || 'testnet'}') 
 });
 
 // ==========================================
-// Create Transaction Block
+// Create Transaction
 // ==========================================
 
-const tx = new TransactionBlock();
+const tx = new Transaction();
 
 // Define the target function
 const packageId = '${packageId}';
@@ -221,25 +234,40 @@ const functionName = '${functionName}';
 // Call the Move function
 tx.moveCall({
   target: \`\${packageId}::\${moduleName}::\${functionName}\`,
-  arguments: [${paramString ? `\n    ${paramString.replace(/,/g, ',\n    ')}\n  ` : ''}],
+  arguments: [${paramString ? `\n    ${paramString}\n  ` : ''}],
 });
 
 // ==========================================
 // Sign and Execute Transaction
 // ==========================================
 
-// Initialize your keypair (replace with your actual private key)
-const keypair = Ed25519Keypair.fromSecretKey('YOUR_PRIVATE_KEY');
-
-// Execute the transaction
-const result = await client.signAndExecuteTransactionBlock({
-  transactionBlock: tx,
-  signer: keypair,
-});
-
-// Log the transaction digest
-console.log('Transaction digest:', result.digest);
-console.log('View on explorer: https://explorer.iota.org/tx/' + result.digest);`;
+try {
+  // Initialize your keypair (replace with your actual private key)
+  const keypair = Ed25519Keypair.fromSecretKey('YOUR_PRIVATE_KEY');
+  const address = keypair.toIotaAddress();
+  
+  // Set transaction sender
+  tx.setSender(address);
+  
+  // Build and execute the transaction
+  const bytes = await tx.build({ client });
+  const result = await client.signAndExecuteTransaction({
+    transaction: bytes,
+    signer: keypair,
+  });
+  
+  // Wait for transaction confirmation
+  await client.waitForTransaction({
+    digest: result.digest,
+  });
+  
+  // Log the transaction digest
+  console.log('Transaction successful!');
+  console.log('Transaction digest:', result.digest);
+  console.log('View on explorer: https://explorer.iota.org/txblock/' + result.digest + '?network=${call.network || 'testnet'}');
+} catch (error) {
+  console.error('Transaction failed:', error);
+}`;
   };
 
 
@@ -306,10 +334,10 @@ console.log('View on explorer: https://explorer.iota.org/tx/' + result.digest);`
                       
                       {/* Function and Module */}
                       <span className="font-mono text-sm font-medium">
-                        {call.ptb_config.functionName || 'Unknown'}
+                        {call.ptb_config.functionName || call.ptb_config?.moduleName || 'function'}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        in {call.ptb_config.moduleName || 'unknown'}
+                        in {call.ptb_config.moduleName || 'counter'}
                       </span>
                     </div>
                     
@@ -414,9 +442,9 @@ console.log('View on explorer: https://explorer.iota.org/tx/' + result.digest);`
 
       {/* Professional Execution Detail Dialog */}
       <Dialog open={!!selectedCall} onOpenChange={(open) => !open && setSelectedCall(null)}>
-        <DialogContent className="max-w-[720px] max-h-[85vh] overflow-hidden">
+        <DialogContent className="max-w-[720px] max-h-[85vh] flex flex-col overflow-hidden">
           {selectedCall && (
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col h-full overflow-hidden">
               {/* Professional Header */}
               <DialogHeader>
                 <DialogTitle className="flex items-center justify-between">
@@ -429,10 +457,10 @@ console.log('View on explorer: https://explorer.iota.org/tx/' + result.digest);`
                     </div>
                     <div>
                       <p className="font-semibold text-base">
-                        {selectedCall.ptb_config.functionName || 'Unknown Function'}
+                        {selectedCall.ptb_config.functionName || selectedCall.ptb_config?.moduleName || 'Function'}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {selectedCall.ptb_config.moduleName || 'Unknown Module'} • {formatDate(selectedCall.created_at)}
+                        {selectedCall.ptb_config.moduleName || 'counter'} • {formatDate(selectedCall.created_at)}
                       </p>
                     </div>
                   </div>
@@ -569,7 +597,7 @@ console.log('View on explorer: https://explorer.iota.org/tx/' + result.digest);`
                                   variant="ghost"
                                   size="sm"
                                   className="h-6 px-2 text-xs"
-                                  onClick={() => window.open(`https://explorer.iota.org/tx/${selectedCall.transaction_hash}?network=${selectedCall.network}`, '_blank')}
+                                  onClick={() => window.open(`https://explorer.iota.org/txblock/${selectedCall.transaction_hash}?network=${selectedCall.network}`, '_blank')}
                                 >
                                   <ExternalLink className="h-3 w-3 mr-1" />
                                   Explorer
@@ -660,56 +688,72 @@ console.log('View on explorer: https://explorer.iota.org/tx/' + result.digest);`
                       </div>
                     )}
 
-                    {/* Execution Result Card - Only show if there's an error or return values */}
-                    {(selectedCall.execution_result.error || selectedCall.execution_result.returnValues) && (
-                      <div className={cn(
-                        "border rounded-lg p-3",
-                        selectedCall.execution_result.error ? "border-red-500/30 bg-red-500/5" : "border-green-500/30 bg-green-500/5"
-                      )}>
-                        <div className="flex items-start gap-3">
-                          {selectedCall.execution_result.error ? (
-                            <XCircle className="h-4 w-4 text-red-500 mt-0.5" />
-                          ) : (
-                            <CheckCircle className="h-4 w-4 text-green-500 mt-0.5" />
-                          )}
-                          <div className="flex-1 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className={cn(
-                                "text-xs font-medium",
-                                selectedCall.execution_result.error ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"
-                              )}>
-                                {selectedCall.execution_result.error ? "Execution Failed" : "Return Values"}
-                              </span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 px-2 text-xs"
-                                onClick={() => {
-                                  const content = selectedCall.execution_result.error || 
-                                    JSON.stringify(selectedCall.execution_result.returnValues, null, 2);
-                                  navigator.clipboard.writeText(content);
-                                  toast({ description: "Result copied" });
-                                }}
-                              >
-                                <Copy className="h-3 w-3 mr-1" />
-                                Copy
-                              </Button>
-                            </div>
-                            {selectedCall.execution_result.error ? (
-                              <pre className="text-xs font-mono text-red-600/80 dark:text-red-400/80 whitespace-pre-wrap max-h-32 overflow-auto">
-                                {selectedCall.execution_result.error}
-                              </pre>
+                    {/* Execution Result Card - Only show if there's an error or meaningful return values */}
+                    {(() => {
+                      // Check if return values are meaningful (not just generic transaction effects)
+                      const hasError = selectedCall.execution_result.error;
+                      const returnValues = selectedCall.execution_result.returnValues;
+                      const hasMeaningfulReturnValues = returnValues && 
+                        Array.isArray(returnValues) && 
+                        returnValues.length > 0 && 
+                        !(returnValues.length === 1 && 
+                          returnValues[0]?.type === 'effects' && 
+                          returnValues[0]?.label === 'Transaction Effects' &&
+                          Object.keys(returnValues[0]?.data || {}).length === 0);
+                      
+                      if (!hasError && !hasMeaningfulReturnValues) return null;
+                      
+                      return (
+                        <div className={cn(
+                          "border rounded-lg p-3",
+                          hasError ? "border-red-500/30 bg-red-500/5" : "border-green-500/30 bg-green-500/5"
+                        )}>
+                          <div className="flex items-start gap-3">
+                            {hasError ? (
+                              <XCircle className="h-4 w-4 text-red-500 mt-0.5" />
                             ) : (
-                              <div className="bg-green-500/10 rounded p-2 max-h-32 overflow-auto">
-                                <pre className="text-xs font-mono">
-                                  <code>{JSON.stringify(selectedCall.execution_result.returnValues, null, 2)}</code>
-                                </pre>
-                              </div>
+                              <CheckCircle className="h-4 w-4 text-green-500 mt-0.5" />
                             )}
+                            <div className="flex-1 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className={cn(
+                                  "text-xs font-medium",
+                                  hasError ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"
+                                )}>
+                                  {hasError ? "Execution Failed" : "Return Values"}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => {
+                                    const content = hasError ? 
+                                      selectedCall.execution_result.error : 
+                                      JSON.stringify(returnValues, null, 2);
+                                    navigator.clipboard.writeText(content);
+                                    toast({ description: "Result copied" });
+                                  }}
+                                >
+                                  <Copy className="h-3 w-3 mr-1" />
+                                  Copy
+                                </Button>
+                              </div>
+                              {hasError ? (
+                                <pre className="text-xs font-mono text-red-600/80 dark:text-red-400/80 whitespace-pre-wrap max-h-32 overflow-auto">
+                                  {selectedCall.execution_result.error}
+                                </pre>
+                              ) : (
+                                <div className="bg-green-500/10 rounded p-2 max-h-32 overflow-auto">
+                                  <pre className="text-xs font-mono">
+                                    <code>{JSON.stringify(returnValues, null, 2)}</code>
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Raw Output Section */}
                     <Collapsible>
@@ -759,13 +803,14 @@ console.log('View on explorer: https://explorer.iota.org/tx/' + result.digest);`
                             <SyntaxHighlighter 
                               language="json"
                               style={vscDarkPlus}
-                              wrapLongLines={true}
+                              wrapLongLines={false}
                               customStyle={{
                                 margin: 0,
                                 background: 'transparent',
                                 fontSize: '11px',
                                 lineHeight: '1.5',
                                 padding: '12px',
+                                minWidth: 'max-content',
                               }}
                             >
                               {JSON.stringify({
@@ -774,10 +819,19 @@ console.log('View on explorer: https://explorer.iota.org/tx/' + result.digest);`
                                 network: selectedCall.network,
                                 gas_used: selectedCall.gas_used,
                                 transaction_hash: selectedCall.transaction_hash,
-                                signer_address: selectedCall.signer_address,
                                 created_at: selectedCall.created_at,
-                                ptb_config: selectedCall.ptb_config,
-                                execution_result: selectedCall.execution_result
+                                ptb_config: {
+                                  packageId: selectedCall.ptb_config.packageId,
+                                  moduleName: selectedCall.ptb_config.moduleName,
+                                  functionName: selectedCall.ptb_config.functionName,
+                                  parameters: selectedCall.ptb_config.parameters
+                                },
+                                execution_result: {
+                                  success: selectedCall.execution_result.success,
+                                  transactionDigest: selectedCall.execution_result.transactionDigest,
+                                  gasUsed: selectedCall.execution_result.gasUsed,
+                                  error: selectedCall.execution_result.error
+                                }
                               }, null, 2)}
                             </SyntaxHighlighter>
                           </div>
@@ -809,42 +863,67 @@ console.log('View on explorer: https://explorer.iota.org/tx/' + result.digest);`
                   </div>
                 </TabsContent>
 
-                <TabsContent value="code" className="mt-3 space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold">SDK Integration Code</h3>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8"
-                        onClick={() => {
-                          const code = generateTypeScriptCode(selectedCall);
-                          navigator.clipboard.writeText(code);
-                          toast({ description: "Code copied to clipboard" });
-                        }}
-                      >
-                        <Copy className="h-3.5 w-3.5 mr-2" />
-                        Copy
-                      </Button>
+                <TabsContent value="code" className="flex-1 overflow-y-auto mt-3">
+                  <div className="space-y-4">
+                    {/* Beta Notice for SDK Code */}
+                    <Alert className="border-amber-500/50 bg-amber-500/5 mt-4">
+                      <AlertCircle className="h-4 w-4 text-amber-500" />
+                      <AlertDescription className="text-sm">
+                        <strong>Beta Feature:</strong> This SDK code generation is in beta and may have issues. Please review all generated code carefully before using in production.
+                      </AlertDescription>
+                    </Alert>
+                    
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold">SDK Integration Code</h3>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8"
+                          onClick={() => {
+                            const code = generateTypeScriptCode(selectedCall);
+                            navigator.clipboard.writeText(code);
+                            toast({ description: "Code copied to clipboard" });
+                          }}
+                        >
+                          <Copy className="h-3.5 w-3.5 mr-2" />
+                          Copy
+                        </Button>
+                      </div>
+                      <div className="text-xs text-muted-foreground space-y-2">
+                        <p>
+                          Use this TypeScript code to reproduce the same transaction in your application.
+                        </p>
+                        <p>
+                          Install the required dependencies with <code className="px-1 py-0.5 bg-muted rounded">npm install @iota/iota-sdk</code> and replace 'YOUR_PRIVATE_KEY' with your actual private key.
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-xs text-muted-foreground space-y-2">
-                      <p>
-                        Use this TypeScript code to reproduce the same transaction in your application.
-                      </p>
-                      <p>
-                        Install the required dependencies with <code className="px-1 py-0.5 bg-muted rounded">npm install @iota/iota-sdk</code> and replace 'YOUR_PRIVATE_KEY' with your actual private key.
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="border rounded-lg bg-slate-50 dark:bg-slate-900/50 overflow-hidden">
-                    <div className="border-b bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5">
-                      <span className="text-xs font-mono text-slate-600 dark:text-slate-400">index.ts</span>
-                    </div>
-                    <div className="max-h-96 overflow-x-auto overflow-y-auto">
-                      <pre className="p-4 text-xs min-w-0">
-                        <code className="text-slate-800 dark:text-slate-200 whitespace-pre break-words">{generateTypeScriptCode(selectedCall)}</code>
-                      </pre>
+                    
+                    <div className="border rounded-lg bg-slate-50 dark:bg-slate-900/50 overflow-hidden">
+                      <div className="border-b bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 flex items-center justify-between">
+                        <span className="text-xs font-mono text-slate-600 dark:text-slate-400">index.ts</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                          onClick={() => {
+                            const code = generateTypeScriptCode(selectedCall);
+                            navigator.clipboard.writeText(code);
+                            toast({ description: "Code copied to clipboard" });
+                          }}
+                        >
+                          <Copy className="h-3 w-3 mr-1" />
+                          Copy
+                        </Button>
+                      </div>
+                      <div className="relative max-h-[400px] overflow-hidden">
+                        <div className="overflow-y-auto overflow-x-auto max-h-[400px]">
+                          <pre className="p-4 text-xs min-w-max">
+                            <code className="text-slate-800 dark:text-slate-200 whitespace-pre">{generateTypeScriptCode(selectedCall)}</code>
+                          </pre>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </TabsContent>

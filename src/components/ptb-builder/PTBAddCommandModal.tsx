@@ -28,7 +28,8 @@ import {
   ExternalLink,
   ArrowRight,
   ArrowLeft,
-  Search
+  Search,
+  FolderOpen
 } from 'lucide-react';
 
 interface PTBAddCommandModalProps {
@@ -402,13 +403,14 @@ export function PTBAddCommandModal({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 px-2"
+                className="h-8 gap-1.5"
                 onClick={() => {
                   setSelectedParamIndex(index);
                   setShowObjectBrowser(true);
                 }}
               >
-                <Search className="h-3.5 w-3.5" />
+                <FolderOpen className="h-4 w-4" />
+                Packages
               </Button>
             </div>
           )}
@@ -763,7 +765,7 @@ export function PTBAddCommandModal({
         </DialogFooter>
       </DialogContent>
       
-      {/* Object Browser Modal */}
+      {/* Object Packages Modal */}
       <ObjectBrowser
         open={showObjectBrowser}
         onOpenChange={setShowObjectBrowser}

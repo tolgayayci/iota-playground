@@ -20,7 +20,7 @@ export function ProjectHeader({ onNewProject }: ProjectHeaderProps) {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Smart Contracts</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Build and deploy your Stylus contracts with confidence
+              Build and deploy your Move contracts with confidence
             </p>
           </div>
         </div>

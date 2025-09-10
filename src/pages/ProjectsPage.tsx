@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Code2Icon, Blocks, Sparkles, Play, PlayCircle, Bug } from 'lucide-react';
+import { Code2Icon, Blocks, Sparkles, Play, Bug } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeProvider } from 'next-themes';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -17,7 +17,6 @@ import { ProjectTabs, SortOption } from '@/components/projects/ProjectTabs';
 import { ProjectEditDialog } from '@/components/projects/ProjectEditDialog';
 import { ProjectDeleteDialog } from '@/components/projects/ProjectDeleteDialog';
 import { NewProjectDialog } from '@/components/projects/NewProjectDialog';
-import { WelcomeDialog } from '@/components/landing/WelcomeDialog';
 import { cn } from '@/lib/utils';
 import { SEO } from '@/components/seo/SEO';
 import { Badge } from '@/components/ui/badge';
@@ -30,44 +29,23 @@ export function ProjectsPage() {
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [activeSection, setActiveSection] = useState<'projects' | 'templates'>('projects');
+  const [activeSection, setActiveSection] = useState<'projects' | 'templates'>(() => {
+    // Load saved section from localStorage or default to 'projects'
+    const saved = localStorage.getItem('iota-playground-active-section');
+    return (saved === 'templates' ? 'templates' : 'projects') as 'projects' | 'templates';
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
-  const [showWelcomeTour, setShowWelcomeTour] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const { user, isLoading: authLoading } = useAuth();
 
-  // Check if user is new and show welcome tour
+  // Save active section to localStorage when it changes
   useEffect(() => {
-    const checkNewUser = async () => {
-      if (!user) return;
-      
-      try {
-        const { data: userProjects, error } = await supabase
-          .from('projects')
-          .select('created_at')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: true })
-          .limit(1);
+    localStorage.setItem('iota-playground-active-section', activeSection);
+  }, [activeSection]);
 
-        // Check if we have any projects and they were just created
-        if (!error && userProjects && userProjects.length > 0) {
-          const firstProject = userProjects[0];
-          if (Date.now() - new Date(firstProject.created_at).getTime() < 5000) {
-            setShowWelcomeTour(true);
-          }
-        }
-      } catch (error) {
-        console.error('Error checking new user status:', error);
-      }
-    };
-
-    if (user) {
-      checkNewUser();
-    }
-  }, [user]);
 
   useEffect(() => {
     console.log('ProjectsPage useEffect - user:', !!user, 'authLoading:', authLoading);
@@ -95,10 +73,27 @@ export function ProjectsPage() {
 
       if (error) throw error;
 
+      // Fetch deployment counts for all projects
+      const projectIds = (data || []).map(p => p.id);
+      const { data: deploymentsData, error: deploymentsError } = await supabase
+        .from('deployed_contracts')
+        .select('project_id')
+        .in('project_id', projectIds);
+      
+      if (deploymentsError) {
+        console.warn('Failed to fetch deployment counts:', deploymentsError);
+      }
+
+      // Count deployments per project
+      const deploymentCounts: Record<string, number> = {};
+      (deploymentsData || []).forEach(deployment => {
+        deploymentCounts[deployment.project_id] = (deploymentCounts[deployment.project_id] || 0) + 1;
+      });
+
       // Transform the data to include deployment count
       const projectsWithCounts = (data || []).map(project => ({
         ...project,
-        deployment_count: 0
+        deployment_count: deploymentCounts[project.id] || 0
       }));
 
       // Apply sorting
@@ -324,15 +319,6 @@ export function ProjectsPage() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2 text-primary hover:text-primary hover:bg-primary/10"
-              onClick={() => setShowWelcomeTour(true)}
-            >
-              <PlayCircle className="h-4 w-4" />
-              Quick Tour
-            </Button>
             <ThemeToggle />
             <UserNav />
           </div>
@@ -388,11 +374,6 @@ export function ProjectsPage() {
         onDescriptionChange={setEditDescription}
         onClose={() => setProjectToEdit(null)}
         onConfirm={handleUpdateProject}
-      />
-
-      <WelcomeDialog
-        open={showWelcomeTour}
-        onOpenChange={setShowWelcomeTour}
       />
     </div>
   );

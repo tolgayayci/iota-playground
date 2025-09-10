@@ -214,6 +214,37 @@ export async function executePlaygroundWalletPTBWithSDK(
     // Create transaction
     const tx = new Transaction();
     
+    // Pre-validate all object arguments before building transaction
+    logger.info('Pre-validating object arguments...');
+    for (const [index, arg] of functionArgs.entries()) {
+      const argValue = typeof arg === 'string' ? arg : arg.value;
+      const argType = typeof arg === 'string' ? '' : arg.type;
+      
+      // Check if this is an object reference
+      if (argType.toLowerCase().includes('&') || argValue.match(/^0x[0-9a-fA-F]{64}$/)) {
+        try {
+          logger.info(`Validating object existence for arg ${index}: ${argValue}`);
+          const objectInfo = await client.getObject({
+            id: argValue,
+            options: { 
+              showOwner: true, 
+              showType: true,
+              showContent: false
+            }
+          });
+          
+          if (!objectInfo.data) {
+            throw new Error(`Object not found on ${network} network: ${argValue}. Please verify the object ID exists and is accessible.`);
+          }
+          
+          logger.info(`✅ Object ${argValue} exists (version: ${objectInfo.data.version})`);
+        } catch (e: any) {
+          logger.error(`❌ Object validation failed for ${argValue}:`, e);
+          throw new Error(`Failed to validate object ${argValue}: ${e.message}. Ensure the object exists on the ${network} network and is accessible.`);
+        }
+      }
+    }
+    
     // Convert arguments to proper Transaction arguments based on type information
     const txArgs = functionArgs.map(arg => {
       // Handle legacy string arguments (backward compatibility)
@@ -243,10 +274,16 @@ export async function executePlaygroundWalletPTBWithSDK(
     });
 
     if (result.effects?.status?.status === 'success') {
+      // Calculate total gas used (computationCost + storageCost - storageRebate)
+      const computationCost = parseInt(result.effects.gasUsed?.computationCost || '0');
+      const storageCost = parseInt(result.effects.gasUsed?.storageCost || '0');
+      const storageRebate = parseInt(result.effects.gasUsed?.storageRebate || '0');
+      const totalGasUsed = (computationCost + storageCost - storageRebate).toString();
+      
       return {
         success: true,
         transactionDigest: result.digest,
-        gasUsed: result.effects.gasUsed?.computationCost || '0',
+        gasUsed: totalGasUsed,
         objectChanges: result.objectChanges || [],
       };
     } else {
@@ -320,6 +357,37 @@ export async function executeViewFunction(
     tx.setSender(inspectSender);
     logger.info(`Set transaction sender to: ${inspectSender}`);
     
+    // Pre-validate all object arguments before building transaction
+    logger.info('Pre-validating object arguments...');
+    for (const [index, arg] of functionArgs.entries()) {
+      const argValue = typeof arg === 'string' ? arg : arg.value;
+      const argType = typeof arg === 'string' ? '' : arg.type;
+      
+      // Check if this is an object reference
+      if (argType.toLowerCase().includes('&') || argValue.match(/^0x[0-9a-fA-F]{64}$/)) {
+        try {
+          logger.info(`Validating object existence for arg ${index}: ${argValue}`);
+          const objectInfo = await client.getObject({
+            id: argValue,
+            options: { 
+              showOwner: true, 
+              showType: true,
+              showContent: false
+            }
+          });
+          
+          if (!objectInfo.data) {
+            throw new Error(`Object not found on ${network} network: ${argValue}. Please verify the object ID exists and is accessible.`);
+          }
+          
+          logger.info(`✅ Object ${argValue} exists (version: ${objectInfo.data.version})`);
+        } catch (e: any) {
+          logger.error(`❌ Object validation failed for ${argValue}:`, e);
+          throw new Error(`Failed to validate object ${argValue}: ${e.message}. Ensure the object exists on the ${network} network and is accessible.`);
+        }
+      }
+    }
+    
     // Convert arguments to proper Transaction arguments
     const txArgs = functionArgs.map((arg, index) => {
       logger.info(`Processing argument ${index}: ${JSON.stringify(arg)}`);
@@ -340,10 +408,32 @@ export async function executeViewFunction(
       arguments: txArgs,
     });
     
-    logger.info('Added moveCall to transaction, building transaction block...');
+    logger.info('Added moveCall to transaction, setting gas budget...');
     
-    // Build the transaction
-    const transactionBlock = await tx.build({ client });
+    // Set gas budget before building to prevent setGasBudget errors
+    tx.setGasBudget(1000000000); // 1 IOTA
+    logger.info('Set gas budget to 1 IOTA for devInspect');
+    
+    // Build the transaction with better error handling
+    let transactionBlock;
+    try {
+      logger.info('Building transaction block...');
+      transactionBlock = await tx.build({ client });
+      logger.info('✅ PTB transaction built successfully');
+    } catch (buildError: any) {
+      logger.error('❌ Transaction build failed:', buildError);
+      
+      // Provide more specific error messages
+      if (buildError.message?.includes('setGasBudget') || buildError.message?.includes('resolveTransactionData')) {
+        throw new Error(`Transaction build failed during object resolution. This usually means one of the object arguments is invalid, doesn't exist, or cannot be accessed. Original error: ${buildError.message}`);
+      }
+      
+      if (buildError.message?.includes('gas') || buildError.message?.includes('budget')) {
+        throw new Error(`Transaction build failed due to gas configuration issues. Original error: ${buildError.message}`);
+      }
+      
+      throw new Error(`Transaction build failed: ${buildError.message}`);
+    }
     
     logger.info('Executing devInspectTransactionBlock...');
     
@@ -423,10 +513,16 @@ export async function executeViewFunction(
       
       logger.info(`View function executed successfully, ${decodedValues.length} return values`);
       
+      // Calculate total gas used (computationCost + storageCost - storageRebate)
+      const computationCost = parseInt(result.effects?.gasUsed?.computationCost || '0');
+      const storageCost = parseInt(result.effects?.gasUsed?.storageCost || '0');
+      const storageRebate = parseInt(result.effects?.gasUsed?.storageRebate || '0');
+      const totalGasUsed = (computationCost + storageCost - storageRebate).toString();
+      
       return {
         success: true,
         returnValues: decodedValues,
-        gasUsed: result.effects?.gasUsed?.computationCost || '0',
+        gasUsed: totalGasUsed,
       };
     } else {
       const errorMsg = result.effects?.status?.error || 'View function execution failed';

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { PROJECT_TEMPLATES } from '@/lib/templates';
-import { TemplateTable } from '@/components/templates/TemplateTable';
+import { TemplateCards } from '@/components/templates/TemplateCards';
 import { TemplatePreview } from '@/components/templates/TemplatePreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -112,7 +112,7 @@ export function TemplateList({
           </p>
         </div>
       ) : (
-        <TemplateTable
+        <TemplateCards
           templates={filteredTemplates}
           onUseTemplate={handleUseTemplate}
           onPreviewTemplate={setPreviewTemplate}

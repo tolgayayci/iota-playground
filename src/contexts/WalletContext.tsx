@@ -156,23 +156,34 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
         }
       } 
       // Auto-initialize playground wallet on first app load (testnet only)
-      else if (!hasInitialized && !wasDisconnected && !currentAccount && network === 'testnet' && !isStale) {
-        const playgroundWallet = createPlaygroundWallet();
-        if (playgroundWallet) {
-          setCurrentWallet(playgroundWallet);
-          setWalletType('playground');
-          localStorage.setItem('iota_wallet_type', 'playground');
-          localStorage.setItem('iota_wallet_initialized', 'true');
-          console.log('Auto-initialized playground wallet for first-time user');
-        }
+      // Only if no external wallet is expected to connect
+      else if (!hasInitialized && !wasDisconnected && !currentAccount && !savedWalletType && network === 'testnet' && !isStale) {
+        // Wait a bit to see if external wallet auto-connects
+        setTimeout(() => {
+          if (!currentAccount && !isStale) {
+            const playgroundWallet = createPlaygroundWallet();
+            if (playgroundWallet) {
+              setCurrentWallet(playgroundWallet);
+              setWalletType('playground');
+              localStorage.setItem('iota_wallet_type', 'playground');
+              localStorage.setItem('iota_wallet_initialized', 'true');
+              console.log('Auto-initialized playground wallet for first-time user');
+            }
+          }
+        }, 1000); // Give external wallet auto-connect 1 second to kick in
       }
       // No wallet connected
       else if (!isStale) {
         setCurrentWallet(null);
         setWalletType('none');
+        // Don't immediately remove external wallet type - let auto-connect handle it
         if (savedWalletType === 'external' && !currentAccount) {
-          // External wallet was saved but disconnected
-          localStorage.removeItem('iota_wallet_type');
+          // Wait for auto-connect to complete before clearing
+          setTimeout(() => {
+            if (!currentAccount && !isStale) {
+              localStorage.removeItem('iota_wallet_type');
+            }
+          }, 2000);
         }
       }
     };
@@ -227,10 +238,8 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
       setWalletType('external');
     }
     
-    toast({
-      title: "Network Switched",
-      description: `Switched to ${newNetwork}`,
-    });
+    // Only show toast if this is a user-initiated network switch (not on app initialization)
+    // Removed automatic toast to prevent annoying notifications on app load
   };
 
   const connectPlaygroundWallet = async () => {
@@ -257,6 +266,7 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
       setCurrentWallet(playgroundWallet);
       setWalletType('playground');
       localStorage.setItem('iota_wallet_type', 'playground');
+      localStorage.removeItem('iota_wallet_disconnected');
       
       toast({
         title: "Playground Wallet Connected",
@@ -279,6 +289,9 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
         setCurrentWallet(null);
         localStorage.removeItem('iota_wallet_type');
       }
+
+      // Clear the disconnected flag
+      localStorage.removeItem('iota_wallet_disconnected');
 
       if (walletName) {
         const wallet = wallets.find(w => w.name === walletName);
@@ -315,6 +328,9 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('iota_wallet_type');
     // Mark that user has explicitly disconnected
     localStorage.setItem('iota_wallet_disconnected', 'true');
+    
+    // Clear dapp-kit auto-connect storage to prevent auto-reconnect
+    localStorage.removeItem('iota-dapp-kit:wallet-connection-info');
     
     toast({
       title: "Wallet Disconnected",
@@ -465,7 +481,11 @@ function DynamicIotaProvider({ children }: { children: ReactNode }) {
 
   return (
     <IotaClientProvider networks={networkConfig} defaultNetwork={currentNetwork}>
-      <IotaWalletProvider>
+      <IotaWalletProvider
+        autoConnect={true}
+        preferredWallets={['IOTA Wallet', 'Sui Wallet']}
+        enableUnsafeBurner={false}
+      >
         <WalletContextProvider>
           {children}
         </WalletContextProvider>

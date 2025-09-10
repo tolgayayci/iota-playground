@@ -231,11 +231,15 @@ export async function compileMove(
       code_snapshot: code
     }, null, 2));
     
+    // Combine stdout and stderr for unified output
+    // Move compiler outputs everything to stderr, even success messages
+    const combinedOutput = (stderr || '') + (stdout || '');
+    
     return {
       success,
       exit_code: success ? 0 : 1,
-      stdout: stdout || '',
-      stderr: stderr || '',
+      stdout: combinedOutput, // Send combined output as stdout
+      stderr: '', // Keep stderr empty to avoid confusion
       details: {
         status: success ? 'success' : 'failed',
         compilation_time: compilationTime,
@@ -258,11 +262,14 @@ export async function compileMove(
     
     logger.error('Compilation error:', error);
     
+    // Combine error outputs as well
+    const errorOutput = (error.stderr || error.message) + (error.stdout || '');
+    
     return {
       success: false,
       exit_code: error.code || 1,
-      stdout: error.stdout || '',
-      stderr: error.stderr || error.message,
+      stdout: errorOutput, // Send combined output as stdout
+      stderr: '', // Keep stderr empty to avoid confusion
       details: {
         status: 'error',
         compilation_time: compilationTime,

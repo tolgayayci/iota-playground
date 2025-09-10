@@ -22,6 +22,13 @@ import {
   AlertCircle,
   Zap,
   Code2,
+  FunctionSquare,
+  Send,
+  Split,
+  Merge,
+  ArrowRight,
+  Hash,
+  Box,
 } from 'lucide-react';
 import { useWallet } from '@/contexts/WalletContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,6 +39,7 @@ import { Transaction } from '@iota/iota-sdk/transactions';
 import { useSignAndExecuteTransaction } from '@iota/dapp-kit';
 import { PTBCommand } from '@/components/views/PTBBuilderV3';
 import { cn } from '@/lib/utils';
+import { Card, CardContent } from '@/components/ui/card';
 
 interface PTBExecutionDialogProps {
   open: boolean;
@@ -52,6 +60,10 @@ interface ExecutionResult {
   objectChanges?: any[];
   events?: any[];
   effects?: any;
+  // For view functions (non-entry), we can return decoded values
+  returnValues?: Array<string | number | any>;
+  // Track the sender used for the transaction
+  senderAddress?: string;
 }
 
 export function PTBExecutionDialog({
@@ -86,10 +98,117 @@ export function PTBExecutionDialog({
     }
   }, [open, commands]);
 
-  const buildTransaction = () => {
+  // Helper function to normalize object IDs to proper format
+  const normalizeObjectId = (id: string): string => {
+    if (!id) return '';
+    
+    // Remove any whitespace
+    let cleanId = id.trim();
+    
+    // Add 0x prefix if missing
+    if (!cleanId.startsWith('0x')) {
+      cleanId = '0x' + cleanId;
+    }
+    
+    // Extract hex part and pad to 64 characters if needed
+    const hexPart = cleanId.slice(2);
+    
+    // Only pad if the hex part is shorter than 64 chars
+    // Don't pad if it's already the right length
+    if (hexPart.length < 64) {
+      const paddedHex = hexPart.padStart(64, '0');
+      return '0x' + paddedHex.toLowerCase();
+    }
+    
+    return '0x' + hexPart.toLowerCase();
+  };
+
+  const buildTransaction = async (client: IotaClient) => {
     const tx = new Transaction();
     
     const commandResults: any[] = [];
+    
+    console.log('🔨 Building PTB transaction with commands:', commands);
+    
+    // Pre-validate all object references before building
+    for (const command of commands) {
+      if (command.type === 'MoveCall' && command.arguments) {
+        for (const arg of command.arguments) {
+          if (arg.type === 'object' || (arg.type === 'input' && arg.paramType?.startsWith('&'))) {
+            const objectId = normalizeObjectId(arg.value);
+            console.log(`🔍 Pre-validating object: ${objectId}`);
+            
+            try {
+              const objResponse = await client.getObject({
+                id: objectId,
+                options: { showOwner: true, showType: true }
+              });
+              
+              if (!objResponse.data) {
+                throw new Error(`Object not found on network: ${objectId}`);
+              }
+              // If paramType specifies a struct type, validate the object's base type matches
+              if (arg.paramType && typeof objResponse.data.type === 'string') {
+                try {
+                  const expected = String(arg.paramType)
+                    .replace(/^&mut\s*/i, '')
+                    .replace(/^&\s*/i, '')
+                    .trim();
+                  const actual = String(objResponse.data.type).trim();
+                  if (expected.includes('::') && actual.includes('::')) {
+                    const base = (s: string) => s.split('<')[0].toLowerCase();
+                    const expectedBase = base(expected);
+                    const actualBase = base(actual);
+                    if (expectedBase !== actualBase) {
+                      // If module and struct name match but package differs, try switching target package automatically
+                      const extractPkg = (t: string) => (t.split('::')[0] || '').toLowerCase();
+                      const extractMod = (t: string) => (t.split('::')[1] || '').toLowerCase();
+                      const extractName = (t: string) => (t.split('::')[2] || '').split('<')[0].toLowerCase();
+
+                      const eMod = extractMod(expected);
+                      const eName = extractName(expected);
+                      const aPkg = extractPkg(actual);
+                      const aMod = extractMod(actual);
+                      const aName = extractName(actual);
+
+                      if (eMod === aMod && eName === aName && typeof command.target === 'string') {
+                        const [pkg, mod, func] = command.target.split('::');
+                        try {
+                          const normalized = await client.getNormalizedMoveModulesByPackage({ package: aPkg });
+                          if (normalized && normalized[mod] && normalized[mod].exposedFunctions && normalized[mod].exposedFunctions[func]) {
+                            const oldTarget = command.target;
+                            command.target = `${aPkg}::${mod}::${func}`;
+                            console.log(`🔁 Auto-switched target due to package mismatch: ${oldTarget} -> ${command.target}`);
+                            // align paramType address with actual package
+                            const refPrefixMatch = String(arg.paramType).match(/^(&mut\s*|&\s*)/);
+                            const refPrefix = refPrefixMatch ? refPrefixMatch[0] : '';
+                            const actualBaseFull = actual.split('<')[0];
+                            arg.paramType = `${refPrefix}${actualBaseFull}`;
+                          } else {
+                            throw new Error(`Type mismatch for ${objectId}. Expected ${expectedBase} but got ${actualBase}`);
+                          }
+                        } catch (e) {
+                          throw new Error(`Type mismatch for ${objectId}. Expected ${expectedBase} but got ${actualBase}`);
+                        }
+                      } else {
+                        throw new Error(`Type mismatch for ${objectId}. Expected ${expectedBase} but got ${actualBase}`);
+                      }
+                    }
+                  }
+                } catch (typeErr) {
+                  throw typeErr;
+                }
+              }
+              
+              console.log(`✅ Object validated: ${objectId}`, objResponse.data);
+            } catch (error) {
+              console.error(`❌ Object validation failed for ${objectId}:`, error);
+              throw new Error(`Cannot access object ${objectId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+          }
+        }
+      }
+    }
     
     // Validate addresses before building
     commands.forEach((command) => {
@@ -97,44 +216,113 @@ export function PTBExecutionDialog({
         if (!command.recipient.value || command.recipient.value === '') {
           throw new Error('Recipient address is required for TransferObjects command');
         }
-        // Basic IOTA address validation (starts with 0x and is 66 chars)
-        if (!command.recipient.value.match(/^0x[a-fA-F0-9]{64}$/)) {
+        // Basic IOTA address validation (starts with 0x and is 66 chars) - case insensitive
+        if (!command.recipient.value.match(/^0x[a-fA-F0-9]{64}$/i)) {
           throw new Error(`Invalid IOTA address format: ${command.recipient.value}`);
         }
       }
     });
     
     commands.forEach((command, index) => {
+      console.log(`📦 Processing command ${index}:`, command);
+      
       switch (command.type) {
         case 'MoveCall':
           if (command.target && command.arguments) {
-            const args = command.arguments.map(arg => {
+            const args = command.arguments.map((arg, argIndex) => {
+              console.log(`  📍 Processing arg ${argIndex}:`, arg);
+              
               if (arg.type === 'result' && arg.resultFrom !== undefined) {
+                console.log(`    → Using result from command ${arg.resultFrom}`);
                 return commandResults[arg.resultFrom];
               } else if (arg.type === 'gas') {
+                console.log(`    → Using gas coin`);
                 return tx.gas;
               } else if (arg.type === 'object') {
-                return tx.object(arg.value);
-              } else {
-                // Handle different input types based on parameter type
-                if (arg.paramType?.includes('u8') || arg.paramType?.includes('u16') || 
-                    arg.paramType?.includes('u32') || arg.paramType?.includes('u64')) {
+                // Normalize and validate object ID
+                const objectId = normalizeObjectId(arg.value);
+                console.log(`    → Object ID normalized: ${arg.value} -> ${objectId}`);
+                
+                // Use lowercase-only regex since we normalize to lowercase
+                if (!objectId.match(/^0x[a-f0-9]{64}$/)) {
+                  throw new Error(`Invalid object ID format: ${arg.value} (normalized: ${objectId})`);
+                }
+                return tx.object(objectId);
+              } else if (arg.type === 'input') {
+                // Check if the parameter type is a reference type (ONLY check for & prefix)
+                if (arg.paramType?.startsWith('&')) {
+                  // This is a reference to an object, treat it as an object
+                  const objectId = normalizeObjectId(arg.value);
+                  console.log(`    → Reference type ${arg.paramType}, normalized object ID: ${arg.value} -> ${objectId}`);
+                  
+                  // Use lowercase-only regex since we normalize to lowercase
+                  if (!objectId.match(/^0x[a-f0-9]{64}$/)) {
+                    throw new Error(`Invalid object ID format for reference type: ${arg.value} (normalized: ${objectId})`);
+                  }
+                  return tx.object(objectId);
+                }
+                
+                // Handle primitive input types with proper type-specific methods
+                const paramType = arg.paramType?.toLowerCase() || '';
+                console.log(`    → Input type: ${paramType}, value: ${arg.value}`);
+                
+                if (paramType === 'u8') {
+                  console.log(`    → Creating u8 pure value`);
+                  return tx.pure.u8(parseInt(arg.value));
+                } else if (paramType === 'u16') {
+                  console.log(`    → Creating u16 pure value`);
+                  return tx.pure.u16(parseInt(arg.value));
+                } else if (paramType === 'u32') {
+                  console.log(`    → Creating u32 pure value`);
+                  return tx.pure.u32(parseInt(arg.value));
+                } else if (paramType === 'u64') {
+                  console.log(`    → Creating u64 pure value`);
                   return tx.pure.u64(arg.value);
-                } else if (arg.paramType?.includes('bool')) {
+                } else if (paramType === 'u128') {
+                  console.log(`    → Creating u128 pure value`);
+                  return tx.pure.u128(arg.value);
+                } else if (paramType === 'u256') {
+                  console.log(`    → Creating u256 pure value`);
+                  return tx.pure.u256(arg.value);
+                } else if (paramType === 'bool') {
+                  console.log(`    → Creating bool pure value: ${arg.value === 'true'}`);
                   return tx.pure.bool(arg.value === 'true');
-                } else if (arg.paramType?.includes('address')) {
-                  return tx.pure.address(arg.value);
+                } else if (paramType === 'address') {
+                  const address = normalizeObjectId(arg.value);
+                  console.log(`    → Creating address pure value: ${arg.value} -> ${address}`);
+                  // Use lowercase-only regex since we normalize to lowercase
+                  if (!address.match(/^0x[a-f0-9]{64}$/)) {
+                    throw new Error(`Invalid address format: ${arg.value} (normalized: ${address})`);
+                  }
+                  return tx.pure.address(address);
+                } else if (paramType.startsWith('vector<')) {
+                  // Handle vector types
+                  try {
+                    const parsed = JSON.parse(arg.value);
+                    const elementType = paramType.match(/vector<(.+)>/)?.[1]?.trim() || 'u8';
+                    return tx.pure.vector(elementType, parsed);
+                  } catch {
+                    return tx.pure.string(arg.value);
+                  }
                 } else {
+                  // Default to string for unknown types
                   return tx.pure.string(arg.value);
                 }
+              } else {
+                // Fallback for any unhandled cases
+                return tx.pure.string(arg.value || '');
               }
             });
+            
+            console.log(`  ✅ Built arguments for MoveCall:`, args);
             
             const result = tx.moveCall({
               target: command.target,
               arguments: args,
               typeArguments: command.typeArguments || [],
             });
+            
+            console.log(`  ✅ MoveCall added to transaction`);
             commandResults.push(result);
           }
           break;
@@ -145,7 +333,12 @@ export function PTBExecutionDialog({
               if (obj.type === 'result' && obj.resultFrom !== undefined) {
                 return commandResults[obj.resultFrom];
               } else {
-                return tx.object(obj.value);
+                const objectId = normalizeObjectId(obj.value);
+                // Use lowercase-only regex since we normalize to lowercase
+                if (!objectId.match(/^0x[a-f0-9]{64}$/)) {
+                  throw new Error(`Invalid object ID format in TransferObjects: ${obj.value} (normalized: ${objectId})`);
+                }
+                return tx.object(objectId);
               }
             });
             
@@ -157,7 +350,7 @@ export function PTBExecutionDialog({
           if (command.coin && command.amounts) {
             const coin = command.coin.type === 'gas' ? tx.gas : 
                         command.coin.type === 'result' ? commandResults[command.coin.resultFrom] :
-                        tx.object(command.coin.value);
+                        tx.object(normalizeObjectId(command.coin.value));
             
             const amounts = command.amounts.map(amt => tx.pure.u64(amt.value));
             const results = tx.splitCoins(coin, amounts);
@@ -169,13 +362,13 @@ export function PTBExecutionDialog({
           if (command.destination && command.sources) {
             const dest = command.destination.type === 'gas' ? tx.gas :
                         command.destination.type === 'result' ? commandResults[command.destination.resultFrom] :
-                        tx.object(command.destination.value);
+                        tx.object(normalizeObjectId(command.destination.value));
             
             const sources = command.sources.map(src => {
               if (src.type === 'result' && src.resultFrom !== undefined) {
                 return commandResults[src.resultFrom];
               } else {
-                return tx.object(src.value);
+                return tx.object(normalizeObjectId(src.value));
               }
             });
             
@@ -185,6 +378,7 @@ export function PTBExecutionDialog({
       }
     });
     
+    console.log('✅ PTB transaction built successfully');
     return tx;
   };
 
@@ -193,19 +387,55 @@ export function PTBExecutionDialog({
       setIsExecuting(true);
       setActiveTab('result');
       
-      const client = new IotaClient({ url: getFullnodeUrl(network) });
-      const tx = buildTransaction();
+      console.log('🚀 Starting PTB dry run...');
+      console.log('Network:', network);
       
-      // Use a dummy address for dry run if not connected
-      const sender = currentAccount?.address || '0x0000000000000000000000000000000000000000000000000000000000000000';
+      const client = new IotaClient({ url: getFullnodeUrl(network) });
+      
+      // Build transaction with client for object validation
+      const tx = await buildTransaction(client);
+      
+      // Set sender BEFORE building the transaction block
+      // Use a real address for dry run (dummy addresses can cause issues)
+      // Choose best sender: wallet, or object owner for view-only, or fallback system address
+      let sender = currentAccount?.address || '';
+      if (!sender) {
+        // If we have any object argument, try to use its owner
+        const firstObjArg = commands
+          .flatMap((c) => (c.type === 'MoveCall' ? (c.arguments || []) : []))
+          .find((a: any) => a?.type === 'object' || (a?.type === 'input' && a?.paramType?.startsWith('&')));
+        if (firstObjArg?.value) {
+          try {
+            const objectId = normalizeObjectId(firstObjArg.value);
+            const objInfo = await client.getObject({ id: objectId, options: { showOwner: true } });
+            const owner = objInfo.data?.owner;
+            if (owner && typeof owner === 'object' && 'AddressOwner' in owner) {
+              sender = owner.AddressOwner as string;
+            }
+          } catch (e) {
+            console.log('Could not determine object owner for sender:', e);
+          }
+        }
+      }
+      if (!sender) {
+        sender = '0x0000000000000000000000000000000000000000000000000000000000000006';
+      }
+      console.log('Setting sender address:', sender);
       tx.setSender(sender);
       
+      // Always use dry run for simulation (both view and entry functions)
+      console.log('Setting gas budget...');
+      tx.setGasBudget(1000000000); // 1 IOTA
+      console.log('Building transaction block...');
       const transactionBlock = await tx.build({ client });
-      
+      console.log('Transaction block built successfully');
+
+      console.log('Running dry run...');
       const dryRunResult = await client.dryRunTransactionBlock({
         transactionBlock,
       });
-      
+      console.log('Dry run result:', dryRunResult);
+
       setResult({
         success: dryRunResult.effects?.status?.status === 'success',
         gasUsed: dryRunResult.effects?.gasUsed?.computationCost || '0',
@@ -213,13 +443,14 @@ export function PTBExecutionDialog({
         events: dryRunResult.events,
         effects: dryRunResult.effects,
         error: dryRunResult.effects?.status?.error,
+        senderAddress: sender,
       });
-      
+
       toast({
-        title: "Dry Run Complete",
-        description: dryRunResult.effects?.status?.status === 'success' 
-          ? "Transaction simulation successful"
-          : "Transaction simulation failed",
+        title: 'Dry Run Complete',
+        description: dryRunResult.effects?.status?.status === 'success'
+          ? 'Transaction simulation successful'
+          : 'Transaction simulation failed',
       });
     } catch (error) {
       console.error('Dry run failed:', error);
@@ -251,9 +482,14 @@ export function PTBExecutionDialog({
       setIsExecuting(true);
       setActiveTab('result');
       
+      const client = new IotaClient({ url: getFullnodeUrl(network) });
+      
       if (walletType === 'external') {
         // External wallet execution
-        const tx = buildTransaction();
+        const tx = await buildTransaction(client);
+        
+        // For external wallets, set gas budget but NOT sender (dapp-kit handles it)
+        tx.setGasBudget(1000000000); // 1 IOTA
         
         signAndExecute(
           {
@@ -370,6 +606,28 @@ export function PTBExecutionDialog({
         }
       }
       
+      // Extract function and module names from MoveCall commands
+      let functionName = '';
+      let moduleName = '';
+      const moveCallCommand = commands.find(cmd => cmd.type === 'MoveCall');
+      if (moveCallCommand) {
+        // Extract module and function from the command
+        if ('module' in moveCallCommand && moveCallCommand.module) {
+          moduleName = moveCallCommand.module;
+        }
+        if ('function' in moveCallCommand && moveCallCommand.function) {
+          functionName = moveCallCommand.function;
+        }
+        // Fallback: parse from target if available
+        if (!functionName && 'target' in moveCallCommand && moveCallCommand.target) {
+          const parts = moveCallCommand.target.split('::');
+          if (parts.length >= 3) {
+            moduleName = moduleName || parts[1];
+            functionName = functionName || parts[2];
+          }
+        }
+      }
+      
       // Build comprehensive PTB config
       const ptbConfig = {
         commands,
@@ -379,6 +637,8 @@ export function PTBExecutionDialog({
         mode: mode, // 'dry-run' or 'execute'
         walletAddress: currentAccount?.address,
         walletType: walletType,
+        functionName: functionName || commands[0]?.type || 'PTB',
+        moduleName: moduleName || 'PTB',
       };
       
       // Build comprehensive execution result
@@ -411,7 +671,7 @@ export function PTBExecutionDialog({
   const openExplorer = () => {
     if (result?.transactionDigest) {
       window.open(
-        `https://explorer.iota.org/transaction/${result.transactionDigest}?network=${network}`,
+        `https://explorer.iota.org/txblock/${result.transactionDigest}?network=${network}`,
         '_blank'
       );
     }
@@ -446,23 +706,29 @@ export function PTBExecutionDialog({
           </TabsList>
 
           <TabsContent value="preview" className="space-y-4">
-            <ScrollArea className="h-[400px] border rounded-md p-4">
-              <div className="space-y-3">
+            <ScrollArea className="h-[400px]">
+              <div className="space-y-3 p-4">
                 {commands.map((command, index) => (
-                  <div key={index} className="p-3 bg-muted rounded-md">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge variant="outline">{index + 1}</Badge>
-                      <Badge>{command.type}</Badge>
-                      {command.description && (
-                        <span className="text-sm text-muted-foreground">
-                          {command.description}
-                        </span>
-                      )}
-                    </div>
-                    <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap break-words">
-                      {JSON.stringify(command, null, 2)}
-                    </pre>
-                  </div>
+                  <Card key={index} className="border bg-gradient-to-br from-muted/50 to-background">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Badge variant="outline" className="font-mono">
+                          {index + 1}
+                        </Badge>
+                        <Badge>{command.type}</Badge>
+                        {command.description && (
+                          <span className="text-sm text-muted-foreground">
+                            {command.description}
+                          </span>
+                        )}
+                      </div>
+                      <div className="bg-background/50 rounded-md p-3 border">
+                        <pre className="text-xs font-mono whitespace-pre overflow-x-auto max-h-[300px] overflow-y-auto">
+                          {JSON.stringify(command, null, 2)}
+                        </pre>
+                      </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             </ScrollArea>
@@ -491,6 +757,75 @@ export function PTBExecutionDialog({
                       {result.success ? 'Success' : 'Failed'}
                     </span>
                   </div>
+
+                  {/* Commands Summary */}
+                  {commands.length > 0 && (
+                    <div>
+                      <Label className="text-sm font-medium">Executed Commands ({commands.length})</Label>
+                      <div className="space-y-2 mt-2">
+                        {commands.map((cmd, index) => {
+                          const getIcon = () => {
+                            switch (cmd.type) {
+                              case 'MoveCall': return <FunctionSquare className="h-3 w-3" />;
+                              case 'TransferObjects': return <Send className="h-3 w-3" />;
+                              case 'SplitCoins': return <Split className="h-3 w-3" />;
+                              case 'MergeCoins': return <Merge className="h-3 w-3" />;
+                              default: return <Code2 className="h-3 w-3" />;
+                            }
+                          };
+                          
+                          return (
+                            <div key={index} className="p-2.5 bg-gradient-to-r from-muted/50 to-muted/30 rounded-md border border-border/50">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-xs h-5">
+                                  {index + 1}
+                                </Badge>
+                                {getIcon()}
+                                <span className="font-mono text-xs">
+                                  {cmd.type === 'MoveCall' ? `${cmd.module}::${cmd.function}` : cmd.type}
+                                </span>
+                                {cmd.type === 'MoveCall' && (cmd as any).isEntry && (
+                                  <Badge variant="secondary" className="text-xs h-5">
+                                    Entry
+                                  </Badge>
+                                )}
+                              </div>
+                              {cmd.type === 'MoveCall' && cmd.target && (
+                                <div className="mt-1 text-[10px] text-muted-foreground font-mono pl-7">
+                                  {cmd.target.split('::')[0].slice(0, 10)}...{cmd.target.split('::')[0].slice(-4)}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {result.senderAddress && (
+                    <div>
+                      <Label className="text-sm">Sender Address</Label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <code className="text-xs bg-muted p-2 rounded flex-1 font-mono">
+                          {result.senderAddress}
+                        </code>
+                        <Badge variant="outline" className="text-xs">
+                          {currentAccount?.address === result.senderAddress ? 'Connected Wallet' : 'Object Owner'}
+                        </Badge>
+                      </div>
+                    </div>
+                  )}
+
+                  {result.returnValues && result.returnValues.length > 0 && (
+                    <div>
+                      <Label className="text-sm">Return Values</Label>
+                      <div className="mt-1 bg-muted rounded-md p-2 max-h-[200px] overflow-auto">
+                        <pre className="text-xs font-mono whitespace-pre">
+                          {JSON.stringify(result.returnValues, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
 
                   {result.transactionDigest && (
                     <div>
@@ -529,9 +864,11 @@ export function PTBExecutionDialog({
                   {result.objectChanges && result.objectChanges.length > 0 && (
                     <div>
                       <Label className="text-sm">Object Changes</Label>
-                      <pre className="text-xs bg-muted p-2 rounded mt-1 overflow-x-auto">
-                        {JSON.stringify(result.objectChanges, null, 2)}
-                      </pre>
+                      <div className="mt-1 bg-muted rounded-md p-2 max-h-[200px] overflow-auto">
+                        <pre className="text-xs font-mono whitespace-pre">
+                          {JSON.stringify(result.objectChanges, null, 2)}
+                        </pre>
+                      </div>
                     </div>
                   )}
                 </div>
