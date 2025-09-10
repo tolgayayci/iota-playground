@@ -36,15 +36,15 @@ RUN apk add --no-cache \
     && rm -rf /var/cache/apk/*
 
 # Install IOTA CLI for Move compilation
-# Using specific version that exists
+# Using IOTA v1.4.1 release
 RUN ARCH=$(uname -m) && \
     echo "Architecture: $ARCH" && \
     if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
-        echo "ARM64 detected - installing IOTA CLI for ARM..." && \
-        curl -L https://github.com/iotaledger/iota/releases/download/v1.4.1/iota-v1.4.1-aarch64-unknown-linux-gnu.tgz -o /tmp/iota.tgz; \
+        echo "ARM64 detected - installing IOTA CLI v1.4.1 for ARM..." && \
+        curl -L https://github.com/iotaledger/iota/releases/download/v1.4.1/iota-v1.4.1-linux-arm64.tgz -o /tmp/iota.tgz; \
     else \
-        echo "x86_64 detected - installing IOTA CLI for x86..." && \
-        curl -L https://github.com/iotaledger/iota/releases/download/v1.4.1/iota-v1.4.1-x86_64-unknown-linux-gnu.tgz -o /tmp/iota.tgz; \
+        echo "x86_64 detected - installing IOTA CLI v1.4.1 for x86..." && \
+        curl -L https://github.com/iotaledger/iota/releases/download/v1.4.1/iota-v1.4.1-linux-x86_64.tgz -o /tmp/iota.tgz; \
     fi && \
     tar -xzf /tmp/iota.tgz -C /usr/local/bin/ && \
     rm /tmp/iota.tgz && \
