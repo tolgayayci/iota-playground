@@ -41,17 +41,25 @@ RUN ARCH=$(uname -m) && \
     tar -xzf iota.tgz && \
     # Check what files were extracted
     ls -la && \
-    # ARM64 tar has iota-node, x86 has target/release/iota
-    if [ -f "iota-node" ]; then \
-        mv iota-node /usr/local/bin/iota; \
-    elif [ -f "target/release/iota" ]; then \
+    # Look for the iota CLI binary (not iota-node)
+    if [ -f "target/release/iota" ]; then \
         mv target/release/iota /usr/local/bin/iota; \
     elif [ -f "iota" ]; then \
         mv iota /usr/local/bin/iota; \
     else \
-        echo "ERROR: Could not find iota binary" && exit 1; \
+        # Fallback: if we only have iota-node, we'll need to install the CLI separately
+        echo "WARNING: iota CLI not found, trying iota-node as fallback" && \
+        if [ -f "iota-node" ]; then \
+            mv iota-node /usr/local/bin/iota-node; \
+        fi && \
+        # Download the actual IOTA CLI
+        if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+            curl -L https://github.com/iotaledger/iota/releases/latest/download/iota-linux-arm64 -o /usr/local/bin/iota; \
+        else \
+            curl -L https://github.com/iotaledger/iota/releases/latest/download/iota-linux-x64 -o /usr/local/bin/iota; \
+        fi; \
     fi && \
-    rm -rf iota.tgz target iota-faucet && \
+    rm -rf iota.tgz target iota-faucet iota-node && \
     chmod +x /usr/local/bin/iota && \
     /usr/local/bin/iota --version
 
