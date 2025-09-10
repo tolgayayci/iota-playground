@@ -65,6 +65,9 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 
+# Copy base_project template
+COPY base_project /app/base_project
+
 # Create projects directory with proper permissions
 RUN mkdir -p /app/projects && \
     chown -R iota:iota /app && \
