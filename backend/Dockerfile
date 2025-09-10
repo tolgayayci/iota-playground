@@ -47,7 +47,7 @@ RUN ARCH=$(uname -m) && \
         curl -L https://github.com/iotaledger/iota/releases/download/v1.4.1/iota-v1.4.1-linux-x86_64.tgz -o /tmp/iota.tgz; \
     fi && \
     tar -xzf /tmp/iota.tgz -C /tmp/ && \
-    find /tmp -name "iota" -type f -executable -exec mv {} /usr/local/bin/iota \; && \
+    mv /tmp/iota /usr/local/bin/iota && \
     rm -rf /tmp/iota* && \
     chmod +x /usr/local/bin/iota && \
     iota --version
