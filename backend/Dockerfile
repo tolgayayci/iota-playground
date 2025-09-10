@@ -32,15 +32,28 @@ RUN apt-get update && apt-get install -y \
 RUN ARCH=$(uname -m) && \
     echo "Architecture: $ARCH" && \
     if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        echo "Installing ARM64 version..." && \
         curl -L https://github.com/iotaledger/iota/releases/download/v1.4.1/iota-v1.4.1-linux-arm64.tgz -o iota.tgz; \
     else \
+        echo "Installing x86_64 version..." && \
         curl -L https://github.com/iotaledger/iota/releases/download/v1.4.1/iota-v1.4.1-linux.tgz -o iota.tgz; \
     fi && \
     tar -xzf iota.tgz && \
-    mv target/release/iota /usr/local/bin/iota && \
-    rm -rf iota.tgz target && \
+    # Check what files were extracted
+    ls -la && \
+    # ARM64 tar has iota-node, x86 has target/release/iota
+    if [ -f "iota-node" ]; then \
+        mv iota-node /usr/local/bin/iota; \
+    elif [ -f "target/release/iota" ]; then \
+        mv target/release/iota /usr/local/bin/iota; \
+    elif [ -f "iota" ]; then \
+        mv iota /usr/local/bin/iota; \
+    else \
+        echo "ERROR: Could not find iota binary" && exit 1; \
+    fi && \
+    rm -rf iota.tgz target iota-faucet && \
     chmod +x /usr/local/bin/iota && \
-    iota --version
+    /usr/local/bin/iota --version
 
 # Create non-root user
 RUN groupadd -r iota && useradd -r -g iota iota
