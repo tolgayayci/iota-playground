@@ -27,7 +27,7 @@ RUN npm run build
 # Production stage
 FROM node:20-slim
 
-# Install runtime dependencies, nginx, certbot
+# Install runtime dependencies, nginx, certbot, and PostgreSQL libraries
 RUN apt-get update && apt-get install -y \
     nginx \
     certbot \
@@ -38,6 +38,8 @@ RUN apt-get update && apt-get install -y \
     bash \
     openssl \
     ca-certificates \
+    libpq5 \
+    libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install IOTA CLI for Move compilation
