@@ -62,9 +62,9 @@ RUN ARCH=$(uname -m) && \
 # Create app directory
 WORKDIR /app
 
-# Create non-root user for security
-RUN groupadd -g 1000 iota && \
-    useradd -u 1000 -g iota -m -s /bin/bash iota && \
+# Create non-root user for security (handle existing GID gracefully)
+RUN groupadd -g 1000 iota 2>/dev/null || groupadd iota && \
+    useradd -u 1000 -g iota -m -s /bin/bash iota 2>/dev/null || useradd -g iota -m -s /bin/bash iota && \
     chown -R iota:iota /app
 
 # Copy package files first and install production dependencies
