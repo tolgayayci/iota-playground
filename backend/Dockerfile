@@ -89,7 +89,7 @@ ENV MOVE_COMPILER_PATH=/usr/local/bin/iota
 ENV COMPILER_WORKSPACE=/app/projects
 
 # Expose ports
-EXPOSE 3001 8443 80
+EXPOSE 3001 8444 80
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
