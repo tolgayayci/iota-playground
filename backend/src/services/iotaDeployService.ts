@@ -114,8 +114,11 @@ export async function deployWithPlaygroundWallet(
     logger.info(`Dependencies:`, iotaDependencies);
     
     // Publish the package
+    // Convert Uint8Array[] to number[][] for the SDK
+    const moduleArrays = moduleBytes.map((bytes: Uint8Array) => Array.from(bytes));
+    
     const [upgradeCap] = tx.publish({
-      modules: moduleBytes,
+      modules: moduleArrays,
       dependencies: iotaDependencies,
     });
     
@@ -141,7 +144,7 @@ export async function deployWithPlaygroundWallet(
     // Extract package ID from object changes
     const publishedPackage = result.objectChanges?.find((change: any) => 
       change.type === 'published'
-    );
+    ) as any;
 
     logger.info(`Published package:`, publishedPackage);
     logger.info(`Object changes:`, result.objectChanges);
@@ -206,8 +209,11 @@ export async function prepareDeploymentTransaction(
     const moduleBytes = modules.map((m: string) => fromB64(m));
     
     // Publish the package
+    // Convert Uint8Array[] to number[][] for the SDK
+    const moduleArrays = moduleBytes.map((bytes: Uint8Array) => Array.from(bytes));
+    
     const [upgradeCap] = tx.publish({
-      modules: moduleBytes,
+      modules: moduleArrays,
       dependencies: dependencies || [],
     });
     
@@ -276,7 +282,7 @@ export async function executeSignedTransaction(
     // Extract package ID from object changes
     const publishedPackage = result.objectChanges?.find((change: any) => 
       change.type === 'published'
-    );
+    ) as any;
 
     if (!publishedPackage) {
       throw new AppError('Failed to extract package ID from deployment', 500);

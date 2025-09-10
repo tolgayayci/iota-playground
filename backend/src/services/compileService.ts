@@ -23,6 +23,8 @@ export interface CompilationResult {
   abi?: any;
   modules?: string[];
   dependencies?: string[];
+  digest?: string;
+  disassembly?: string;
   code_snapshot: string;
 }
 

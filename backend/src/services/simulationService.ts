@@ -81,8 +81,11 @@ export async function simulateDeployment(
     const moduleBytes = modules.map((m: string) => fromB64(m));
     
     // Publish the package
+    // Convert Uint8Array[] to number[][] for the SDK
+    const moduleArrays = moduleBytes.map((bytes: Uint8Array) => Array.from(bytes));
+    
     const [upgradeCap] = tx.publish({
-      modules: moduleBytes,
+      modules: moduleArrays,
       dependencies: dependencies || [],
     });
     

@@ -134,10 +134,13 @@ function parseTypedArgument(tx: any, value: string, moveType: string): any {
 export interface PTBExecutionResult {
   success: boolean;
   transactionDigest?: string;
+  digest?: string; // Alternative to transactionDigest
   gasUsed?: string;
   error?: string;
   objectChanges?: any[];
   returnValues?: any[];
+  events?: any[];
+  effects?: any;
 }
 
 export interface ViewFunctionResult {
