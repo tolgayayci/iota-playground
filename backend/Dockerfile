@@ -48,9 +48,9 @@ RUN ARCH=$(uname -m) && \
     fi && \
     tar -xzf /tmp/iota.tgz -C /tmp/ && \
     mv /tmp/iota /usr/local/bin/iota && \
-    rm -rf /tmp/iota* && \
     chmod +x /usr/local/bin/iota && \
-    iota --version
+    /usr/local/bin/iota --version && \
+    rm -rf /tmp/iota*
 
 # Create app directory
 WORKDIR /app
