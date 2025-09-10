@@ -1,8 +1,13 @@
 # Multi-stage build for IOTA Playground backend
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 # Install build dependencies
-RUN apk add --no-cache python3 make g++ git
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
 WORKDIR /app
@@ -20,20 +25,20 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine
+FROM node:20-slim
 
-# Install runtime dependencies, nginx, certbot, and IOTA CLI
-RUN apk add --no-cache \
+# Install runtime dependencies, nginx, certbot
+RUN apt-get update && apt-get install -y \
     nginx \
     certbot \
-    certbot-nginx \
+    python3-certbot-nginx \
     supervisor \
     curl \
     git \
     bash \
     openssl \
     ca-certificates \
-    && rm -rf /var/cache/apk/*
+    && rm -rf /var/lib/apt/lists/*
 
 # Install IOTA CLI for Move compilation
 # Using IOTA v1.4.1 release
@@ -56,8 +61,8 @@ RUN ARCH=$(uname -m) && \
 WORKDIR /app
 
 # Create non-root user for security
-RUN addgroup -g 1000 -S iota && \
-    adduser -u 1000 -S iota -G iota && \
+RUN groupadd -g 1000 iota && \
+    useradd -u 1000 -g iota -m -s /bin/bash iota && \
     chown -R iota:iota /app
 
 # Copy package files first and install production dependencies
@@ -79,10 +84,11 @@ RUN mkdir -p /var/www/certbot && \
     mkdir -p /etc/nginx/ssl && \
     mkdir -p /var/log/supervisor && \
     mkdir -p /run/nginx && \
-    rm -f /etc/nginx/http.d/default.conf
+    rm -f /etc/nginx/sites-enabled/default
 
 # Copy configuration files
-COPY nginx.conf /etc/nginx/http.d/api.conf
+COPY nginx.conf /etc/nginx/sites-available/api
+RUN ln -s /etc/nginx/sites-available/api /etc/nginx/sites-enabled/api
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
