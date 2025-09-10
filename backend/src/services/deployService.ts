@@ -4,7 +4,6 @@ import { mkdir, writeFile, rm, readFile } from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { MOVE_CONFIG, IOTA_CONFIG } from '../config/iota';
-import { PLAYGROUND_WALLET_CONFIG, getPlaygroundPrivateKey } from '../config/wallet';
 import { AppError } from '../middleware/errorHandler';
 import { logger } from '../utils/logger';
 

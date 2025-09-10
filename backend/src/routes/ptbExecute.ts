@@ -44,7 +44,7 @@ const executePTBCommandsSchema = Joi.object({
 });
 
 // View function endpoint - for read-only functions
-router.post('/view', async (req, res, next) => {
+router.post('/view', async (req, res, _next) => {
   try {
     const { error, value } = viewFunctionSchema.validate(req.body);
     if (error) {
@@ -91,7 +91,7 @@ router.post('/view', async (req, res, next) => {
   }
 });
 
-router.post('/execute', async (req, res, next) => {
+router.post('/execute', async (req, res, _next) => {
   try {
     // Check if request contains commands array (PTB Builder) or functionTarget (Module Interface)
     if (req.body.commands && Array.isArray(req.body.commands)) {

@@ -290,7 +290,7 @@ function parseABIFromMoveCode(code: string): any {
   
   const lines = code.split('\n');
   let currentModule = null;
-  let inFunction = false;
+  // let // inFunction = false;
   let functionBuffer = '';
   
   for (let i = 0; i < lines.length; i++) {
@@ -307,7 +307,7 @@ function parseABIFromMoveCode(code: string): any {
     
     // Extract public functions with full signatures
     if (line.includes('public') && (line.includes('fun ') || line.includes('entry fun'))) {
-      inFunction = true;
+      // inFunction = true;
       functionBuffer = line;
       
       // Check if function signature continues on next lines
@@ -347,7 +347,7 @@ function parseABIFromMoveCode(code: string): any {
           type: isEntry ? 'entry' : 'view'
         });
       }
-      inFunction = false;
+      // inFunction = false;
     }
     
     // Extract structs
