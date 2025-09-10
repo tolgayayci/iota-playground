@@ -1,83 +1,133 @@
 #!/bin/bash
 set -e
 
-DOMAIN="api.iotaplay.app"
+DOMAIN="${DOMAIN:-api.iotaplay.app}"
 EMAIL="${EMAIL:-tolga+iotaplay@yk-labs.com}"
 
-echo "Starting IOTA Playground Backend with SSL for $DOMAIN"
+echo "Starting IOTA Playground Backend with SSL setup"
 
 # Create necessary directories
 mkdir -p /var/www/certbot
 mkdir -p /var/log/supervisor
 mkdir -p /run/nginx
+mkdir -p /etc/nginx/sites-available
+mkdir -p /etc/nginx/sites-enabled
+mkdir -p /etc/nginx/ssl
 
-# Check if certificates exist
-if [ ! -d "/etc/letsencrypt/live/$DOMAIN" ]; then
-    echo "Getting Let's Encrypt certificate for $DOMAIN..."
+# Function to setup nginx for certbot
+setup_nginx_for_certbot() {
+    echo "Setting up nginx for Let's Encrypt challenge..."
     
-    # Remove any existing nginx configs that might interfere
-    rm -f /etc/nginx/http.d/*.conf
-    
-    # Create a simple nginx config just for certbot
-    cat > /etc/nginx/http.d/certbot.conf <<EOF
+    # Create nginx config for certbot challenge
+    cat > /etc/nginx/sites-available/certbot <<EOF
 server {
     listen 80;
     server_name $DOMAIN;
     
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
+        try_files \$uri =404;
     }
     
     location / {
-        return 404;
+        return 301 https://\$server_name\$request_uri;
     }
 }
 EOF
     
+    # Enable the certbot config
+    ln -sf /etc/nginx/sites-available/certbot /etc/nginx/sites-enabled/certbot
+    
+    # Remove default site if exists
+    rm -f /etc/nginx/sites-enabled/default
+    
     # Test nginx config
     nginx -t
+}
+
+# Function to get certificates
+get_certificates() {
+    echo "Attempting to get Let's Encrypt certificates for $DOMAIN..."
     
-    # Start nginx for certbot
+    # Setup nginx for webroot challenge
+    setup_nginx_for_certbot
+    
+    # Start nginx
     nginx
-    sleep 5
+    sleep 2
     
-    # Test that nginx is serving on port 80
-    echo "Testing nginx on port 80..."
-    curl -f http://localhost/.well-known/acme-challenge/ || echo "Nginx test path accessible"
-    
-    # Get certificate
-    certbot certonly --webroot -w /var/www/certbot \
+    # Use webroot method
+    certbot certonly --webroot \
+        -w /var/www/certbot \
         --email $EMAIL \
         --agree-tos \
         --no-eff-email \
         --non-interactive \
-        -d $DOMAIN || {
-            echo "Failed to get certificate, using self-signed as fallback"
-            mkdir -p /etc/nginx/ssl
-            openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-                -keyout /etc/nginx/ssl/privkey.pem \
-                -out /etc/nginx/ssl/fullchain.pem \
-                -subj "/CN=$DOMAIN"
-            
-            # Update nginx config to use self-signed
-            sed -i 's|/etc/letsencrypt/live/api.iotaplay.app/|/etc/nginx/ssl/|g' /etc/nginx/http.d/api.conf
-        }
+        --keep-until-expiring \
+        --expand \
+        -d $DOMAIN
     
-    # Stop nginx and clean up
-    nginx -s stop || true
+    local result=$?
+    
+    # Stop nginx temporarily
+    nginx -s stop 2>/dev/null || true
     sleep 2
-    rm -f /etc/nginx/http.d/certbot.conf
+    
+    return $result
+}
+
+# Check if certificates exist
+if [ ! -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+    echo "No certificates found. Attempting to obtain them..."
+    
+    # Try to get certificates
+    if get_certificates; then
+        echo "✅ Successfully obtained Let's Encrypt certificates!"
+    else
+        echo "⚠️ Let's Encrypt certificate generation failed."
+        echo ""
+        echo "This might be because:"
+        echo "1. Port 80 is not accessible from outside (blocked by Wizard container)"
+        echo "2. DNS for $DOMAIN doesn't point to this server"
+        echo ""
+        echo "Creating self-signed certificate as fallback..."
+        
+        # Create self-signed certificate
+        mkdir -p /etc/nginx/ssl
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout /etc/nginx/ssl/privkey.pem \
+            -out /etc/nginx/ssl/fullchain.pem \
+            -subj "/CN=$DOMAIN"
+        
+        echo "Self-signed certificate created."
+        
+        # Update nginx config to use self-signed certificates
+        if [ -f "/etc/nginx/sites-available/api" ]; then
+            sed -i 's|/etc/letsencrypt/live/api.iotaplay.app/|/etc/nginx/ssl/|g' /etc/nginx/sites-available/api
+        fi
+    fi
+else
+    echo "Certificates already exist for $DOMAIN"
 fi
 
-# Copy the main nginx config
-cp /etc/nginx/http.d/api.conf.tmp /etc/nginx/http.d/api.conf 2>/dev/null || true
+# Setup auto-renewal with cron
+if ! crontab -l 2>/dev/null | grep -q "certbot renew"; then
+    (crontab -l 2>/dev/null; echo "0 3,15 * * * certbot renew --webroot -w /var/www/certbot --quiet --deploy-hook 'nginx -s reload' >> /var/log/certbot-renew.log 2>&1") | crontab -
+    echo "Auto-renewal cron job installed"
+fi
 
-# Setup auto-renewal cron job
-echo "0 3 * * * certbot renew --quiet --post-hook 'nginx -s reload'" | crontab -
+# Enable the main API config
+rm -f /etc/nginx/sites-enabled/certbot
+rm -f /etc/nginx/sites-enabled/default
+
+if [ -f "/etc/nginx/sites-available/api" ]; then
+    ln -sf /etc/nginx/sites-available/api /etc/nginx/sites-enabled/api
+    echo "Main API nginx configuration enabled"
+fi
 
 # Set proper permissions for iota user
-chown -R iota:iota /app/projects || true
-chmod -R 755 /app/projects || true
+chown -R iota:iota /app/projects 2>/dev/null || true
+chmod -R 755 /app/projects 2>/dev/null || true
 
 # Ensure the backend user can write to projects
 if [ ! -d "/app/projects" ]; then
@@ -86,4 +136,5 @@ if [ ! -d "/app/projects" ]; then
 fi
 
 # Start services with supervisor
+echo "Starting supervisor with nginx and backend..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf

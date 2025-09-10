@@ -10,7 +10,7 @@ services:
     ports:
       - "8081:3001"  # Internal API port (different from Wizard's 8080)
       - "8444:8444"  # HTTPS port for api.iotaplay.app (changed from 8443 to avoid Wizard conflict)
-      # - "80:80"    # HTTP port for Let's Encrypt challenge (commented out - port in use)
+      - "8082:80"    # HTTP port for Let's Encrypt standalone challenge
     volumes:
       # Persistent storage for user projects
       - ./projects:/app/projects
