@@ -7,10 +7,9 @@ services:
       dockerfile: Dockerfile
     container_name: iota-playground-backend
     restart: unless-stopped
-    ports:
-      - "8081:3001"  # Internal API port (different from Wizard's 8080)
-      - "8444:8444"  # HTTPS port for api.iotaplay.app (changed from 8443 to avoid Wizard conflict)
-      - "8082:80"    # HTTP port for Let's Encrypt standalone challenge
+    # No exposed ports - Traefik handles everything
+    expose:
+      - "3001"
     volumes:
       # Persistent storage for user projects
       - ./projects:/app/projects
@@ -48,6 +47,20 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
     networks:
       - iota-network
+      - proxy
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      
+      # Router for api.iotaplay.app
+      - "traefik.http.routers.iota-api.rule=Host(`api.iotaplay.app`)"
+      - "traefik.http.routers.iota-api.entrypoints=websecure"
+      - "traefik.http.routers.iota-api.tls=true"
+      - "traefik.http.routers.iota-api.tls.certresolver=letsencrypt"
+      
+      # Service configuration
+      - "traefik.http.services.iota-api.loadbalancer.server.port=3001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
       interval: 30s
@@ -58,6 +71,8 @@ services:
 networks:
   iota-network:
     driver: bridge
+  proxy:
+    external: true
 
 # Volumes for persistent data
 volumes:
