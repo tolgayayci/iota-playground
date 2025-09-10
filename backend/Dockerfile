@@ -63,8 +63,8 @@ RUN ARCH=$(uname -m) && \
     chmod +x /usr/local/bin/iota && \
     /usr/local/bin/iota --version
 
-# Create non-root user
-RUN groupadd -r iota && useradd -r -g iota iota
+# Create non-root user with home directory
+RUN groupadd -r iota && useradd -r -g iota -m -d /home/iota iota
 
 WORKDIR /app
 
@@ -76,10 +76,15 @@ COPY --from=builder /app/package*.json ./
 # Copy base_project template
 COPY base_project /app/base_project
 
-# Create projects directory with proper permissions
+# Create necessary directories with proper permissions
 RUN mkdir -p /app/projects && \
+    mkdir -p /home/iota/.move && \
+    mkdir -p /home/iota/.config && \
     chown -R iota:iota /app && \
-    chmod -R 755 /app/projects
+    chown -R iota:iota /home/iota && \
+    chmod -R 755 /app/projects && \
+    chmod -R 755 /home/iota/.move && \
+    chmod -R 755 /home/iota/.config
 
 # Environment variables
 ENV NODE_ENV=production
