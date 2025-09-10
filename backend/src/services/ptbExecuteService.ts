@@ -137,6 +137,7 @@ export interface PTBExecutionResult {
   gasUsed?: string;
   error?: string;
   objectChanges?: any[];
+  returnValues?: any[];
 }
 
 export interface ViewFunctionResult {
@@ -160,7 +161,49 @@ export async function executePlaygroundWalletPTB(
     ).join(', ');
     logger.info(`Executing PTB: ${functionTarget} with args: [${argsLog}]`);
 
-    // Use SDK implementation directly - more reliable than CLI
+    // First, try to get module information to determine if this is a view function
+    const { IotaClient, getFullnodeUrl } = await import('@iota/iota-sdk/client');
+    const client = new IotaClient({ url: getFullnodeUrl(network) });
+    
+    // Parse the function target to get package, module, and function names
+    const [packageAndModule, functionName] = functionTarget.split('::').slice(-2);
+    const [packageId] = functionTarget.split('::');
+    
+    try {
+      // Try to execute as a view function first using devInspect
+      // This is safer and works for both view and entry functions
+      logger.info(`Attempting to execute as view function using devInspect...`);
+      
+      // Get playground wallet address for sender
+      const { Ed25519Keypair } = await import('@iota/iota-sdk/keypairs/ed25519');
+      const { getPlaygroundPrivateKey } = await import('../config/wallet');
+      const privateKey = getPlaygroundPrivateKey();
+      if (!privateKey) {
+        throw new Error('Playground wallet private key not configured');
+      }
+      const keypair = Ed25519Keypair.fromSecretKey(privateKey);
+      const senderAddress = keypair.toIotaAddress();
+      
+      // Try executing as view function first
+      const viewResult = await executeViewFunction(functionTarget, functionArgs, network, senderAddress);
+      
+      if (viewResult.success && viewResult.returnValues) {
+        // This is a view function that returns values
+        logger.info(`Function ${functionTarget} executed as view function with return values`);
+        return {
+          success: true,
+          transactionDigest: 'view-function-no-tx', // Special marker for view functions
+          gasUsed: viewResult.gasUsed || '0',
+          returnValues: viewResult.returnValues,
+        };
+      }
+    } catch (viewError) {
+      // If devInspect fails, it might be an entry function that needs actual execution
+      logger.info(`devInspect failed, attempting real execution: ${viewError}`);
+    }
+
+    // If we get here, execute as a regular transaction
+    logger.info(`Executing as regular transaction with playground wallet...`);
     return await executePlaygroundWalletPTBWithSDK(projectId, functionTarget, functionArgs, network);
 
   } catch (error) {

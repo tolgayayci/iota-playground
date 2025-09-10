@@ -86,22 +86,24 @@ export async function preparePublishTransaction(
   try {
     // Get the current user session
     const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
     
     const response = await fetch(`${API_URL}/v2/deploy/prepare-publish`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token}`,
       },
       body: JSON.stringify({
         projectId,
         network,
+        userId,
       }),
     });
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to prepare publish transaction');
+      const errorMessage = error.error?.message || error.message || error.error || 'Failed to prepare publish transaction';
+      throw new Error(errorMessage);
     }
 
     const result = await response.json();

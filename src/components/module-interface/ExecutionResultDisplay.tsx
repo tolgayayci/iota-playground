@@ -55,6 +55,7 @@ export interface ExecutionResult {
   packageId?: string;
   parameters?: any[];
   executionTime?: number;
+  walletType?: 'playground' | 'external';
 }
 
 interface ExecutionResultDisplayProps {
@@ -263,8 +264,8 @@ export function ExecutionResultDisplay({
         </Card>
       )}
 
-      {/* Object Changes */}
-      {result.objectChanges && result.objectChanges.length > 0 && (
+      {/* Object Changes - Only show for external wallet */}
+      {result.walletType !== 'playground' && result.objectChanges && result.objectChanges.length > 0 && (
         <Card>
           <CardHeader className="py-3">
             <CardTitle className="text-sm font-medium flex items-center justify-between">

@@ -5,7 +5,6 @@ import { getPlaygroundPrivateKey } from '../config/wallet';
 import { Ed25519Keypair } from '@iota/iota-sdk/keypairs/ed25519';
 import { AppError } from '../middleware/errorHandler';
 import { logger } from '../utils/logger';
-import { supabase } from '../config/database';
 
 export interface SimulationResult {
   success: boolean;
@@ -29,25 +28,21 @@ export interface SimulationResult {
  * Get compiled modules and dependencies from the last successful compilation
  */
 async function getCompiledPackageData(projectId: string, userId: string) {
-  const { data: project, error } = await supabase
-    .from('projects')
-    .select('last_compilation_result, code')
-    .eq('id', projectId)
-    .eq('user_id', userId)
-    .single();
-
-  if (error || !project) {
-    throw new AppError('Project not found', 404);
-  }
-
-  if (!project.last_compilation_result?.success) {
+  // Import the function from compileService to get bytecode
+  const { getBytecodeForDeployment } = await import('./compileService');
+  
+  logger.info(`Getting compiled package data for simulation: project ${projectId}, user ${userId}`);
+  
+  const bytecodeData = await getBytecodeForDeployment(userId, projectId);
+  
+  if (!bytecodeData.modules || bytecodeData.modules.length === 0) {
     throw new AppError('Project must be compiled successfully before simulation', 400);
   }
 
   return {
-    modules: project.last_compilation_result.modules || [],
-    dependencies: project.last_compilation_result.dependencies || ['0x1', '0x2'],
-    code: project.code
+    modules: bytecodeData.modules,
+    dependencies: bytecodeData.dependencies || ['0x1', '0x2'],
+    code: '' // Not needed for simulation
   };
 }
 

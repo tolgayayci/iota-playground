@@ -71,7 +71,10 @@ export function ModulePackageSelector({
       <div className="p-4 border-b bg-muted/20">
         <div className="space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <label className="text-sm font-medium flex-shrink-0">Package Address</label>
+            <label className="text-sm font-medium flex-shrink-0 flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Package Address
+            </label>
             {/* Deployment Badges - Wrap on small screens */}
             {currentDeployment && deploymentMetadata && (
               <div className="flex flex-wrap items-center gap-2 justify-end">

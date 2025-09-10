@@ -435,6 +435,7 @@ export function PTBExecuteDialogV2({
       return {
         status: 'success' as const,
         txHash: result.data.transactionDigest,
+        transactionDigest: result.data.transactionDigest, // Add this for consistency
         gasUsed: result.data.gasUsed || '0',
         outputs: result.data.objectChanges || [],
         explorerUrl: `https://explorer.iota.org/txblock/${result.data.transactionDigest}?network=${network}`,
@@ -477,6 +478,7 @@ export function PTBExecuteDialogV2({
             moduleName,
             packageId,
             parameters: Object.values(inputs),
+            walletType: 'playground',
           };
           
           setResult(executionResult);
@@ -490,7 +492,7 @@ export function PTBExecuteDialogV2({
             moduleName,
             Object.values(inputs),
             playgroundResult,
-            playgroundResult.transactionDigest,
+            playgroundResult.txHash, // Use txHash instead of transactionDigest
             playgroundResult.gasUsed
           );
           
@@ -622,6 +624,7 @@ export function PTBExecuteDialogV2({
                 effects: result.effects,
                 functionName: capturedMethodName,
                 moduleName: capturedModuleName,
+                walletType: 'external',
                 packageId,
                 parameters: inputValues,
                 executionTime: Date.now() - startTime,

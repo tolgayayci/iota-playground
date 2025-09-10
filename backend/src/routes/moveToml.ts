@@ -1,9 +1,7 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import Joi from 'joi';
-import { AuthRequest } from '../middleware/authentication';
 import { AppError } from '../middleware/errorHandler';
 import { readMoveToml, updateMoveToml, validateMoveToml, parseMoveToml } from '../services/moveTomlService';
-import { supabase } from '../config/database';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -14,22 +12,9 @@ const updateMoveTomlSchema = Joi.object({
 });
 
 // Get Move.toml for a project
-router.get('/projects/:projectId/move-toml', async (req: AuthRequest, res, next) => {
+router.get('/:userId/:projectId', async (req: Request, res: Response, next) => {
   try {
-    const { projectId } = req.params;
-    const userId = req.userId!;
-    
-    // Verify project ownership
-    const { data: project, error } = await (supabase as any)
-      .from('projects')
-      .select('id, user_id')
-      .eq('id', projectId)
-      .eq('user_id', userId)
-      .single();
-    
-    if (error || !project) {
-      throw new AppError('Project not found or access denied', 404, 'PROJECT_NOT_FOUND');
-    }
+    const { userId, projectId } = req.params;
     
     // Read Move.toml from filesystem
     const content = await readMoveToml(userId, projectId);
@@ -47,27 +32,14 @@ router.get('/projects/:projectId/move-toml', async (req: AuthRequest, res, next)
 });
 
 // Update Move.toml for a project
-router.put('/projects/:projectId/move-toml', async (req: AuthRequest, res, next) => {
+router.put('/:userId/:projectId', async (req: Request, res: Response, next) => {
   try {
-    const { projectId } = req.params;
-    const userId = req.userId!;
+    const { userId, projectId } = req.params;
     
     // Validate request body
     const { error: validationError, value } = updateMoveTomlSchema.validate(req.body);
     if (validationError) {
       throw new AppError(validationError.details[0].message, 400, 'VALIDATION_ERROR');
-    }
-    
-    // Verify project ownership
-    const { data: project, error } = await (supabase as any)
-      .from('projects')
-      .select('id, user_id, name')
-      .eq('id', projectId)
-      .eq('user_id', userId)
-      .single();
-    
-    if (error || !project) {
-      throw new AppError('Project not found or access denied', 404, 'PROJECT_NOT_FOUND');
     }
     
     // Validate Move.toml content
@@ -82,12 +54,6 @@ router.put('/projects/:projectId/move-toml', async (req: AuthRequest, res, next)
     
     // Update Move.toml in filesystem
     await updateMoveToml(userId, projectId, value.content);
-    
-    // Update project's updated_at timestamp
-    await (supabase as any)
-      .from('projects')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', projectId);
     
     logger.info(`Updated Move.toml for project ${projectId} by user ${userId}`);
     
@@ -107,27 +73,12 @@ router.put('/projects/:projectId/move-toml', async (req: AuthRequest, res, next)
 });
 
 // Validate Move.toml content (without saving)
-router.post('/projects/:projectId/move-toml/validate', async (req: AuthRequest, res, next) => {
+router.post('/validate', async (req: Request, res: Response, next) => {
   try {
-    const { projectId } = req.params;
-    const userId = req.userId!;
-    
     // Validate request body
     const { error: validationError, value } = updateMoveTomlSchema.validate(req.body);
     if (validationError) {
       throw new AppError(validationError.details[0].message, 400, 'VALIDATION_ERROR');
-    }
-    
-    // Verify project ownership
-    const { data: project, error } = await (supabase as any)
-      .from('projects')
-      .select('id, user_id')
-      .eq('id', projectId)
-      .eq('user_id', userId)
-      .single();
-    
-    if (error || !project) {
-      throw new AppError('Project not found or access denied', 404, 'PROJECT_NOT_FOUND');
     }
     
     // Validate Move.toml content
@@ -146,22 +97,9 @@ router.post('/projects/:projectId/move-toml/validate', async (req: AuthRequest, 
 });
 
 // Get parsed Move.toml data
-router.get('/projects/:projectId/move-toml/parsed', async (req: AuthRequest, res, next) => {
+router.get('/:userId/:projectId/parsed', async (req: Request, res: Response, next) => {
   try {
-    const { projectId } = req.params;
-    const userId = req.userId!;
-    
-    // Verify project ownership
-    const { data: project, error } = await (supabase as any)
-      .from('projects')
-      .select('id, user_id')
-      .eq('id', projectId)
-      .eq('user_id', userId)
-      .single();
-    
-    if (error || !project) {
-      throw new AppError('Project not found or access denied', 404, 'PROJECT_NOT_FOUND');
-    }
+    const { userId, projectId } = req.params;
     
     // Parse Move.toml
     const config = await parseMoveToml(userId, projectId);

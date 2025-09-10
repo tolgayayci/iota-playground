@@ -486,6 +486,91 @@ export function DeployDialogV2({
         // Step 5: Complete
         setDeploymentStep(5);
         setDeploymentResult(result);
+        
+        // Save deployment to database
+        try {
+          console.log('💾 Saving playground deployment to database...');
+          console.log('📦 Deployment result:', result);
+          
+          // Get ABI from compilation
+          let abiFunctions = [];
+          const compilationAbi = lastCompilation?.abi;
+          if (compilationAbi) {
+            if (Array.isArray(compilationAbi)) {
+              abiFunctions = compilationAbi;
+            } else if (compilationAbi.functions && Array.isArray(compilationAbi.functions)) {
+              abiFunctions = compilationAbi.functions;
+            }
+          }
+          
+          // Ensure we have the transaction digest
+          const txHash = result.transactionDigest || result.digest || result.transaction_hash;
+          if (!txHash) {
+            console.warn('⚠️ No transaction hash found in deployment result');
+          }
+          
+          const deploymentData = {
+            project_id: projectId,
+            user_id: user.id,
+            package_id: result.packageId,
+            module_address: result.packageId,
+            module_name: 'playground_deployment', // Identifies as playground wallet
+            network: network,
+            abi: { 
+              functions: abiFunctions,
+              deployerAddress: playgroundAddress 
+            },
+            transaction_hash: txHash || '',
+            gas_used: parseInt(result.gasUsed || '0')
+          };
+          
+          console.log('📝 Deployment data to save:', deploymentData);
+          console.log('📝 Transaction hash:', txHash);
+          
+          // Use upsert to handle re-deployments
+          const { data: insertData, error: dbError } = await supabase
+            .from('deployed_contracts')
+            .upsert(deploymentData, {
+              onConflict: 'package_id,network',
+              ignoreDuplicates: false
+            })
+            .select();
+          
+          if (dbError) {
+            console.error('❌ Failed to save deployment to database:', dbError);
+          } else {
+            console.log('✅ Successfully saved deployment to database:', insertData);
+            
+            // Trigger refresh event
+            window.dispatchEvent(new CustomEvent('deployment-completed', { 
+              detail: { packageId: result.packageId, network: network }
+            }));
+          }
+          
+          // Update project with deployment info
+          if (result.packageId) {
+            const projectUpdateData = {
+              package_id: result.packageId,
+              module_address: result.packageId
+            };
+            
+            const { data: updateData, error: updateError } = await supabase
+              .from('projects')
+              .update(projectUpdateData)
+              .eq('id', projectId)
+              .select();
+            
+            if (updateError) {
+              console.error('❌ Failed to update project:', updateError);
+            } else {
+              console.log('✅ Successfully updated project:', updateData);
+            }
+          }
+        } catch (saveError) {
+          console.error('❌ Error saving deployment:', saveError);
+          // Don't fail the deployment for database save errors
+        }
+        
         toast({
           title: "✅ Deployment Successful",
           description: `Package deployed with ID: ${result.packageId}`,

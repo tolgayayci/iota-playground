@@ -36,6 +36,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 import { IotaClient, getFullnodeUrl } from '@iota/iota-sdk/client';
 import { Transaction } from '@iota/iota-sdk/transactions';
+import { Ed25519Keypair } from '@iota/iota-sdk/keypairs/ed25519';
 import { useSignAndExecuteTransaction } from '@iota/dapp-kit';
 import { PTBCommand } from '@/components/views/PTBBuilderV3';
 import { cn } from '@/lib/utils';
@@ -389,18 +390,31 @@ export function PTBExecutionDialog({
       
       console.log('🚀 Starting PTB dry run...');
       console.log('Network:', network);
+      console.log('Wallet Type:', walletType);
       
       const client = new IotaClient({ url: getFullnodeUrl(network) });
       
       // Build transaction with client for object validation
       const tx = await buildTransaction(client);
       
-      // Set sender BEFORE building the transaction block
-      // Use a real address for dry run (dummy addresses can cause issues)
-      // Choose best sender: wallet, or object owner for view-only, or fallback system address
-      let sender = currentAccount?.address || '';
-      if (!sender) {
-        // If we have any object argument, try to use its owner
+      // Determine the sender address based on wallet type
+      let sender: string;
+      
+      if (walletType === 'playground') {
+        // Use playground wallet address
+        const playgroundPrivateKey = import.meta.env.VITE_PLAYGROUND_WALLET_PRIVATE_KEY;
+        if (!playgroundPrivateKey) {
+          throw new Error('Playground wallet private key not configured');
+        }
+        const keypair = Ed25519Keypair.fromSecretKey(playgroundPrivateKey);
+        sender = keypair.toIotaAddress();
+        console.log('Using playground wallet for dry run:', sender);
+      } else if (currentAccount?.address) {
+        // Use external wallet address
+        sender = currentAccount.address;
+        console.log('Using external wallet for dry run:', sender);
+      } else {
+        // Fallback: try to determine from object owner or use system address
         const firstObjArg = commands
           .flatMap((c) => (c.type === 'MoveCall' ? (c.arguments || []) : []))
           .find((a: any) => a?.type === 'object' || (a?.type === 'input' && a?.paramType?.startsWith('&')));
@@ -411,16 +425,21 @@ export function PTBExecutionDialog({
             const owner = objInfo.data?.owner;
             if (owner && typeof owner === 'object' && 'AddressOwner' in owner) {
               sender = owner.AddressOwner as string;
+              console.log('Using object owner for dry run:', sender);
+            } else {
+              sender = '0x0000000000000000000000000000000000000000000000000000000000000006';
+              console.log('Using fallback system address for dry run');
             }
           } catch (e) {
             console.log('Could not determine object owner for sender:', e);
+            sender = '0x0000000000000000000000000000000000000000000000000000000000000006';
           }
+        } else {
+          sender = '0x0000000000000000000000000000000000000000000000000000000000000006';
+          console.log('Using fallback system address for dry run');
         }
       }
-      if (!sender) {
-        sender = '0x0000000000000000000000000000000000000000000000000000000000000006';
-      }
-      console.log('Setting sender address:', sender);
+      
       tx.setSender(sender);
       
       // Always use dry run for simulation (both view and entry functions)
@@ -535,41 +554,196 @@ export function PTBExecutionDialog({
           }
         );
       } else {
-        // Playground wallet execution
-        const response = await fetch('/api/ptb/execute', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-          },
-          body: JSON.stringify({
-            commands,
-            network,
-          }),
-        });
+        // Playground wallet execution - handle on frontend
+        const playgroundPrivateKey = import.meta.env.VITE_PLAYGROUND_WALLET_PRIVATE_KEY;
+        if (!playgroundPrivateKey) {
+          throw new Error('Playground wallet private key not configured');
+        }
         
-        const data = await response.json();
+        // Create keypair from private key
+        const keypair = Ed25519Keypair.fromSecretKey(playgroundPrivateKey);
+        const playgroundAddress = keypair.toIotaAddress();
         
-        if (data.success) {
-          setResult({
-            success: true,
-            transactionDigest: data.transactionDigest,
-            gasUsed: data.gasUsed,
-            objectChanges: data.objectChanges,
+        console.log('🔑 Using playground wallet:', playgroundAddress);
+        
+        // Build transaction
+        const tx = await buildTransaction(client);
+        
+        // Set gas budget and sender for playground wallet
+        tx.setGasBudget(1000000000); // 1 IOTA
+        tx.setSender(playgroundAddress);
+        
+        // First, try to execute as a view function using devInspect
+        let isViewFunction = false;
+        let viewResult = null;
+        
+        try {
+          console.log('🔍 Attempting devInspectTransactionBlock...');
+          const transactionBlock = await tx.build({ client });
+          
+          const inspectResult = await client.devInspectTransactionBlock({
+            transactionBlock,
+            sender: playgroundAddress,
           });
           
-          await savePTBHistory(true, data.transactionDigest, data.gasUsed);
+          console.log('📊 DevInspect result:', inspectResult);
+          
+          // Check if this is a successful view function
+          if (inspectResult.effects?.status?.status === 'success' && inspectResult.results?.[0]?.returnValues) {
+            isViewFunction = true;
+            viewResult = inspectResult;
+            console.log('✅ Function executed as view function');
+          }
+        } catch (devInspectError: any) {
+          console.log('ℹ️ DevInspect failed or no return values, will execute as transaction:', devInspectError);
+          
+          // Check for ownership errors
+          if (devInspectError.message?.includes('is owned by') || devInspectError.message?.includes('owner/signer')) {
+            // Extract owner address from error message if possible
+            const ownerMatch = devInspectError.message.match(/owned by account address (0x[a-f0-9]+)/i);
+            const ownerAddress = ownerMatch ? ownerMatch[1] : 'another wallet';
+            
+            throw new Error(
+              `This object is owned by ${ownerAddress}. Only the owner can execute functions that require owned objects. ` +
+              `The playground wallet (${playgroundAddress}) cannot access objects owned by other wallets.`
+            );
+          }
+        }
+        
+        if (isViewFunction && viewResult) {
+          // Handle view function result
+          const returnValues = viewResult.results[0].returnValues || [];
+          
+          // Process return values
+          const decodedValues = returnValues.map((value: any) => {
+            if (Array.isArray(value) && value.length === 2) {
+              const [data, type] = value;
+              
+              if (type && data) {
+                try {
+                  // For number types, decode the bytes
+                  if (['u8', 'u16', 'u32', 'u64', 'u128', 'u256'].includes(type)) {
+                    const bytes = new Uint8Array(data);
+                    let num = BigInt(0);
+                    // Little-endian byte order
+                    for (let i = 0; i < bytes.length; i++) {
+                      num = num | (BigInt(bytes[i]) << BigInt(i * 8));
+                    }
+                    return {
+                      value: num.toString(),
+                      type: type,
+                    };
+                  }
+                  
+                  // For bool
+                  if (type === 'bool') {
+                    return {
+                      value: data[0] === 1,
+                      type: 'bool',
+                    };
+                  }
+                  
+                  // For address
+                  if (type === 'address') {
+                    const hex = '0x' + Array.from(data, (byte: any) => 
+                      byte.toString(16).padStart(2, '0')
+                    ).join('');
+                    return {
+                      value: hex,
+                      type: 'address',
+                    };
+                  }
+                  
+                  // Default
+                  return {
+                    value: data,
+                    type: type,
+                  };
+                } catch (e) {
+                  return { value: data, type: type };
+                }
+              }
+            }
+            return value;
+          });
+          
+          // Calculate gas used
+          const computationCost = parseInt(viewResult.effects?.gasUsed?.computationCost || '0');
+          const storageCost = parseInt(viewResult.effects?.gasUsed?.storageCost || '0');
+          const storageRebate = parseInt(viewResult.effects?.gasUsed?.storageRebate || '0');
+          const totalGasUsed = (computationCost + storageCost - storageRebate).toString();
+          
+          setResult({
+            success: true,
+            gasUsed: totalGasUsed,
+            returnValues: decodedValues,
+            isViewFunction: true,
+          });
           
           toast({
-            title: "Transaction Successful",
-            description: `Transaction: ${data.transactionDigest.slice(0, 10)}...`,
+            title: "View Function Executed",
+            description: "Function executed successfully (read-only)",
           });
           
           if (onExecutionComplete) {
             onExecutionComplete();
           }
         } else {
-          throw new Error(data.error || 'Transaction failed');
+          // Execute as a regular transaction
+          console.log('🚀 Executing as regular transaction...');
+          
+          const result = await client.signAndExecuteTransaction({
+            transaction: tx,
+            signer: keypair,
+            options: {
+              showEffects: true,
+              showObjectChanges: true,
+              showEvents: true,
+            }
+          });
+          
+          if (result.effects?.status?.status === 'success') {
+            // Calculate total gas used
+            const computationCost = parseInt(result.effects.gasUsed?.computationCost || '0');
+            const storageCost = parseInt(result.effects.gasUsed?.storageCost || '0');
+            const storageRebate = parseInt(result.effects.gasUsed?.storageRebate || '0');
+            const totalGasUsed = (computationCost + storageCost - storageRebate).toString();
+            
+            setResult({
+              success: true,
+              transactionDigest: result.digest,
+              gasUsed: totalGasUsed,
+              objectChanges: result.objectChanges,
+              events: result.events,
+              effects: result.effects,
+            });
+            
+            await savePTBHistory(true, result.digest, totalGasUsed);
+            
+            toast({
+              title: "Transaction Successful",
+              description: `Transaction: ${result.digest.slice(0, 10)}...`,
+            });
+            
+            if (onExecutionComplete) {
+              onExecutionComplete();
+            }
+          } else {
+            const errorMsg = result.effects?.status?.error || 'Transaction failed';
+            
+            // Check for ownership errors
+            if (errorMsg.includes('is owned by') || errorMsg.includes('owner/signer')) {
+              const ownerMatch = errorMsg.match(/owned by account address (0x[a-f0-9]+)/i);
+              const ownerAddress = ownerMatch ? ownerMatch[1] : 'another wallet';
+              
+              throw new Error(
+                `This object is owned by ${ownerAddress}. Only the owner can execute functions that require owned objects. ` +
+                `The playground wallet (${playgroundAddress}) cannot access objects owned by other wallets.`
+              );
+            }
+            
+            throw new Error(errorMsg);
+          }
         }
       }
     } catch (error) {
@@ -722,8 +896,8 @@ export function PTBExecutionDialog({
                           </span>
                         )}
                       </div>
-                      <div className="bg-background/50 rounded-md p-3 border">
-                        <pre className="text-xs font-mono whitespace-pre overflow-x-auto max-h-[300px] overflow-y-auto">
+                      <div className="bg-background/50 rounded-md p-3 border overflow-hidden">
+                        <pre className="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-[300px] overflow-y-auto">
                           {JSON.stringify(command, null, 2)}
                         </pre>
                       </div>
@@ -781,7 +955,7 @@ export function PTBExecutionDialog({
                                   {index + 1}
                                 </Badge>
                                 {getIcon()}
-                                <span className="font-mono text-xs">
+                                <span className="font-mono text-xs truncate">
                                   {cmd.type === 'MoveCall' ? `${cmd.module}::${cmd.function}` : cmd.type}
                                 </span>
                                 {cmd.type === 'MoveCall' && (cmd as any).isEntry && (
@@ -791,7 +965,7 @@ export function PTBExecutionDialog({
                                 )}
                               </div>
                               {cmd.type === 'MoveCall' && cmd.target && (
-                                <div className="mt-1 text-[10px] text-muted-foreground font-mono pl-7">
+                                <div className="mt-1 text-[10px] text-muted-foreground font-mono pl-7 truncate">
                                   {cmd.target.split('::')[0].slice(0, 10)}...{cmd.target.split('::')[0].slice(-4)}
                                 </div>
                               )}
@@ -803,41 +977,63 @@ export function PTBExecutionDialog({
                   )}
 
                   {result.senderAddress && (
-                    <div>
+                    <div className="overflow-hidden">
                       <Label className="text-sm">Sender Address</Label>
                       <div className="flex items-center gap-2 mt-1">
-                        <code className="text-xs bg-muted p-2 rounded flex-1 font-mono">
+                        <code className="text-xs bg-muted p-2 rounded flex-1 font-mono break-all">
                           {result.senderAddress}
                         </code>
-                        <Badge variant="outline" className="text-xs">
-                          {currentAccount?.address === result.senderAddress ? 'Connected Wallet' : 'Object Owner'}
-                        </Badge>
                       </div>
                     </div>
                   )}
 
                   {result.returnValues && result.returnValues.length > 0 && (
-                    <div>
+                    <div className="overflow-hidden">
                       <Label className="text-sm">Return Values</Label>
-                      <div className="mt-1 bg-muted rounded-md p-2 max-h-[200px] overflow-auto">
-                        <pre className="text-xs font-mono whitespace-pre">
-                          {JSON.stringify(result.returnValues, null, 2)}
-                        </pre>
+                      <div className="mt-1 bg-muted rounded-md p-2 max-h-[200px] overflow-auto space-y-2">
+                        {result.returnValues.map((value: any, index: number) => (
+                          <div key={index} className="flex items-start gap-2">
+                            <Badge variant="outline" className="text-xs h-5 mt-0.5">
+                              {index}
+                            </Badge>
+                            <div className="flex-1">
+                              {value.type && value.value !== undefined ? (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-mono">
+                                      {typeof value.value === 'object' 
+                                        ? JSON.stringify(value.value) 
+                                        : String(value.value)}
+                                    </span>
+                                    <Badge variant="secondary" className="text-xs h-4">
+                                      {value.type}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              ) : (
+                                <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                                  {JSON.stringify(value, null, 2)}
+                                </pre>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
 
                   {result.transactionDigest && (
-                    <div>
+                    <div className="overflow-hidden">
                       <Label className="text-sm">Transaction Digest</Label>
                       <div className="flex items-center gap-2 mt-1">
-                        <code className="text-xs bg-muted p-2 rounded flex-1">
+                        <code className="text-xs bg-muted p-2 rounded flex-1 break-all">
                           {result.transactionDigest}
                         </code>
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={openExplorer}
+                          className="flex-shrink-0"
                         >
                           <ExternalLink className="h-4 w-4" />
                         </Button>
@@ -857,15 +1053,15 @@ export function PTBExecutionDialog({
                   {result.error && (
                     <Alert variant="destructive">
                       <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>{result.error}</AlertDescription>
+                      <AlertDescription className="break-words">{result.error}</AlertDescription>
                     </Alert>
                   )}
 
                   {result.objectChanges && result.objectChanges.length > 0 && (
-                    <div>
+                    <div className="overflow-hidden">
                       <Label className="text-sm">Object Changes</Label>
                       <div className="mt-1 bg-muted rounded-md p-2 max-h-[200px] overflow-auto">
-                        <pre className="text-xs font-mono whitespace-pre">
+                        <pre className="text-xs font-mono whitespace-pre-wrap break-all">
                           {JSON.stringify(result.objectChanges, null, 2)}
                         </pre>
                       </div>

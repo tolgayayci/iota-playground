@@ -5,7 +5,6 @@ import { fromB64, toB64 } from '@iota/iota-sdk/utils';
 import { PLAYGROUND_WALLET_CONFIG, getPlaygroundPrivateKey } from '../config/wallet';
 import { AppError } from '../middleware/errorHandler';
 import { logger } from '../utils/logger';
-import { supabase } from '../config/database';
 
 export interface DeploymentResult {
   success: boolean;
@@ -57,43 +56,9 @@ export async function getCompiledPackageData(projectId: string, userId: string) 
     logger.error('Filesystem error details:', fsError);
   }
 
-  logger.info('Falling back to database approach...');
-  
-  // Fallback to database approach
-  const { data: project, error } = await supabase
-    .from('projects')
-    .select('last_compilation_result, code')
-    .eq('id', projectId)
-    .eq('user_id', userId)
-    .single();
-
-  logger.info(`Database query result: project=${!!project}, error=${!!error}`);
-  
-  if (error) {
-    logger.error('Database error:', error);
-    throw new AppError('Project not found and no compiled modules available', 404);
-  }
-  
-  if (!project) {
-    logger.error('No project found in database');
-    throw new AppError('Project not found and no compiled modules available', 404);
-  }
-
-  logger.info(`Project compilation result:`, project.last_compilation_result ? 'exists' : 'missing');
-  
-  if (!project.last_compilation_result?.success) {
-    logger.error('Project compilation was not successful');
-    throw new AppError('Project must be compiled successfully before deployment', 400);
-  }
-
-  const modules = project.last_compilation_result.modules || [];
-  logger.info(`Returning database data with ${modules.length} modules`);
-
-  return {
-    modules,
-    dependencies: project.last_compilation_result.dependencies || ['0x1', '0x2'],
-    code: project.code
-  };
+  // No database fallback - only filesystem approach is supported
+  logger.error('No compiled modules found in filesystem');
+  throw new AppError('Project must be compiled before deployment', 400);
 }
 
 /**
@@ -345,18 +310,10 @@ export async function executeSignedTransaction(
 
 /**
  * Get deployment history for a project
+ * Note: Returns empty array as we don't have database storage
  */
 export async function getDeploymentHistory(projectId: string, userId: string) {
-  const { data, error } = await supabase
-    .from('deployed_contracts')
-    .select('*')
-    .eq('project_id', projectId)
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    throw new AppError('Failed to fetch deployment history', 500);
-  }
-
-  return data || [];
+  logger.info(`Deployment history requested for project ${projectId}, user ${userId}`);
+  // Without database, we can't track deployment history
+  return [];
 }

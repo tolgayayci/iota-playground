@@ -116,25 +116,14 @@ export function PTBHistoryPanel({ projectId, selectedPackage, refreshKey, onRepl
     // Apply filtering
     let filtered = [...history];
     
-    // Filter by status
+    // Filter by status only (package filtering is now done in fetchHistory)
     if (filterStatus !== 'all') {
       filtered = filtered.filter(item => item.status === filterStatus);
     }
     
-    // Filter by selected package if provided
-    if (selectedPackage) {
-      filtered = filtered.filter(item => 
-        item.ptb_config?.packageId === selectedPackage ||
-        // Check if any MoveCall commands use this package
-        item.ptb_config?.commands?.some((cmd: any) => 
-          cmd.type === 'MoveCall' && cmd.target?.startsWith(selectedPackage)
-        )
-      );
-    }
-    
     setFilteredHistory(filtered);
     setCurrentPage(1);
-  }, [history, selectedPackage, filterStatus]);
+  }, [history, filterStatus]);
 
   const fetchHistory = async () => {
     if (!user?.id) return;
@@ -152,9 +141,28 @@ export function PTBHistoryPanel({ projectId, selectedPackage, refreshKey, onRepl
       if (error) throw error;
       
       // IMPORTANT: Filter to only show PTB Builder executions (those with commands array)
-      const ptbExecutions = (data || []).filter(item => 
+      // AND if a package is selected, only show executions for that package
+      let ptbExecutions = (data || []).filter(item => 
         item.ptb_config?.commands && Array.isArray(item.ptb_config.commands)
       );
+      
+      // If a specific package is selected, filter to only show history for that package
+      if (selectedPackage) {
+        ptbExecutions = ptbExecutions.filter(item => {
+          // Check if ptb_config.packageId matches
+          if (item.ptb_config?.packageId === selectedPackage) {
+            return true;
+          }
+          
+          // Check if any MoveCall commands use this package
+          const commands = item.ptb_config?.commands || [];
+          return commands.some((cmd: any) => 
+            cmd.type === 'MoveCall' && 
+            cmd.target && 
+            cmd.target.startsWith(selectedPackage + '::')
+          );
+        });
+      }
       
       setHistory(ptbExecutions);
     } catch (error) {
@@ -531,7 +539,7 @@ export function PTBHistoryPanel({ projectId, selectedPackage, refreshKey, onRepl
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="h-7 w-7 p-0"
                             onClick={(e) => {
                               e.stopPropagation();
                               onReplay(commands);
@@ -551,7 +559,7 @@ export function PTBHistoryPanel({ projectId, selectedPackage, refreshKey, onRepl
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="h-7 w-7 p-0"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleDelete(item.id);

@@ -9,6 +9,7 @@ import { validateMoveToml, formatValidationErrors } from '@/lib/moveTomlValidati
 import { apiRequest } from '@/lib/api';
 import Editor from '@monaco-editor/react';
 import { useTheme } from 'next-themes';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface MoveTomlEditorProps {
   isOpen: boolean;
@@ -26,6 +27,7 @@ export function MoveTomlEditor({ isOpen, onClose, projectId, projectName }: Move
   const editorRef = useRef<any>(null);
   const { toast } = useToast();
   const { theme } = useTheme();
+  const { user } = useAuth();
 
   // Load Move.toml content when dialog opens
   useEffect(() => {
@@ -43,9 +45,18 @@ export function MoveTomlEditor({ isOpen, onClose, projectId, projectName }: Move
   }, [content]);
 
   const loadMoveToml = async () => {
+    if (!user?.id) {
+      toast({
+        title: 'Error',
+        description: 'User not authenticated',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const response = await apiRequest(`/projects/${projectId}/move-toml`, {
+      const response = await apiRequest(`/move-toml/${user.id}/${projectId}`, {
         method: 'GET',
       });
       
@@ -66,6 +77,15 @@ export function MoveTomlEditor({ isOpen, onClose, projectId, projectName }: Move
   };
 
   const handleSave = async () => {
+    if (!user?.id) {
+      toast({
+        title: 'Error',
+        description: 'User not authenticated',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     // Validate before saving
     const validation = validateMoveToml(content);
     if (!validation.valid) {
@@ -79,7 +99,7 @@ export function MoveTomlEditor({ isOpen, onClose, projectId, projectName }: Move
 
     setIsSaving(true);
     try {
-      const response = await apiRequest(`/projects/${projectId}/move-toml`, {
+      const response = await apiRequest(`/move-toml/${user.id}/${projectId}`, {
         method: 'PUT',
         body: JSON.stringify({ content }),
       });

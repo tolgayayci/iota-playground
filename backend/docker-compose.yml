@@ -30,24 +30,15 @@ services:
       - DOMAIN=api.iotaplay.app
       - EMAIL=tolga+iotaplay@yk-labs.com
       
-      # Database (from .env file)
-      - DATABASE_URL=${DATABASE_URL}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      
       # IOTA configuration
-      - IOTA_NODE_URL=${IOTA_NODE_URL:-https://api.testnet.iota.cafe}
+      - IOTA_NODE_URL=${IOTA_NODE_URL:-https://api.testnet.iota.org}
       - IOTA_NETWORK=${IOTA_NETWORK:-testnet}
+      - IOTA_EXPLORER_URL=${IOTA_EXPLORER_URL:-https://explorer.iota.org}
       - PLAYGROUND_WALLET_PRIVATE_KEY=${PLAYGROUND_WALLET_PRIVATE_KEY}
       
       # Move compiler
       - MOVE_COMPILER_PATH=/usr/local/bin/iota
       - COMPILER_WORKSPACE=/app/projects
-      
-      # Security
-      - JWT_SECRET=${JWT_SECRET}
-      - API_KEY=${API_KEY}
       
       # Rate limiting
       - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-900000}

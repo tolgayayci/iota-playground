@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { supabase } from '../config/database';
 import { verifyIOTAInstallation } from '../config/iota';
 import { logger } from '../utils/logger';
 
@@ -13,23 +12,14 @@ router.get('/', async (req, res) => {
       uptime: process.uptime(),
       environment: process.env.NODE_ENV,
       services: {
-        database: false,
         iotaCLI: false
       }
     };
 
-    // Check database connection
-    try {
-      const { error } = await supabase.from('users').select('count').limit(1);
-      health.services.database = !error;
-    } catch (error) {
-      logger.error('Database health check failed:', error);
-    }
-
     // Check IOTA CLI availability
     health.services.iotaCLI = await verifyIOTAInstallation();
 
-    const statusCode = health.services.database && health.services.iotaCLI ? 200 : 503;
+    const statusCode = health.services.iotaCLI ? 200 : 503;
 
     res.status(statusCode).json({
       success: true,

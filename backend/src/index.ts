@@ -16,9 +16,7 @@ import { logger } from './utils/logger';
 
 // Import routes (after dotenv is loaded)
 import compileRouter from './routes/compile';
-import deployRouter from './routes/deploy';
 import deployV2Router from './routes/deployV2';
-import projectRouter from './routes/projects';
 import healthRouter from './routes/health';
 import ptbExecuteRouter from './routes/ptbExecute';
 import moveTomlRouter from './routes/moveToml';
@@ -26,7 +24,6 @@ import moveTomlRouter from './routes/moveToml';
 // Import middleware (after dotenv is loaded)
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimiter } from './middleware/rateLimiter';
-import { authentication } from './middleware/authentication';
 
 // Create Express app
 const app = express();
@@ -47,12 +44,10 @@ app.use('/api', rateLimiter);
 
 // Routes
 app.use('/api/health', healthRouter);
-app.use('/api/compile', compileRouter); // Temporarily removed auth for testing
-app.use('/api/deploy', deployRouter); // Legacy deployment endpoint
-app.use('/api/v2/deploy', deployV2Router); // New deployment with SDK
+app.use('/api/compile', compileRouter);
+app.use('/api/v2/deploy', deployV2Router); // Deployment endpoints
 app.use('/api/v2/ptb', ptbExecuteRouter); // PTB execution with playground wallet
-app.use('/api/projects', authentication, projectRouter);
-app.use('/api', authentication, moveTomlRouter); // Move.toml endpoints
+app.use('/api/move-toml', moveTomlRouter); // Move.toml endpoints (no auth)
 
 // Error handling
 app.use(errorHandler);
@@ -74,14 +69,8 @@ app.listen(PORT, async () => {
   logger.info(`📍 Environment: ${process.env.NODE_ENV}`);
   logger.info(`🔗 IOTA Network: ${process.env.IOTA_NETWORK}`);
   
-  // Check configuration
-  const { checkSupabaseConfig } = await import('./config/database');
-  const hasSupabase = checkSupabaseConfig();
-  if (!hasSupabase) {
-    logger.warn('⚠️  Running without full Supabase configuration');
-  } else {
-    logger.info('✅ Supabase configured');
-  }
+  // Supabase removed - running as stateless service
+  logger.info('✅ Running as stateless compilation service (no database)')
   
   // Check IOTA CLI
   const { verifyIOTAInstallation } = await import('./config/iota');

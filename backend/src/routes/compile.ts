@@ -4,7 +4,6 @@ import { compileRateLimiter } from '../middleware/rateLimiter';
 import { AppError } from '../middleware/errorHandler';
 import { compileMove, getBytecodeForDeployment } from '../services/compileService';
 import { logger } from '../utils/logger';
-import { supabase } from '../config/database';
 
 const router = Router();
 
@@ -30,22 +29,11 @@ router.post('/', compileRateLimiter, async (req, res, next) => {
     // Compile the Move code
     const compilationResult = await compileMove(code, project_id, user_id);
 
-    // Store compilation result in projects table if successful
+    // Log compilation result (no database storage since Supabase is removed)
     if (compilationResult.success) {
-      try {
-        await supabase
-          .from('projects')
-          .update({
-            last_compilation_result: compilationResult,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', project_id)
-          .eq('user_id', user_id);
-        
-        logger.info(`Stored compilation result in database for project ${project_id}`);
-      } catch (error) {
-        logger.warn(`Failed to store compilation result in database:`, error);
-      }
+      logger.info(`Compilation successful for project ${project_id}`);
+    } else {
+      logger.warn(`Compilation failed for project ${project_id}`);
     }
 
     res.json({
