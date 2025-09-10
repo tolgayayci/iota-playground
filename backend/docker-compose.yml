@@ -11,8 +11,8 @@ services:
     expose:
       - "3001"
     volumes:
-      # Persistent storage for user projects
-      - ./projects:/app/projects
+      # Persistent storage for user projects (create if doesn't exist)
+      - iota-projects:/app/projects
       # SSL certificates
       - /etc/letsencrypt:/etc/letsencrypt
       # Logs
@@ -76,7 +76,7 @@ networks:
 
 # Volumes for persistent data
 volumes:
-  projects:
+  iota-projects:
     driver: local
   letsencrypt:
     driver: local

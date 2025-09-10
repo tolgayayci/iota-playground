@@ -65,8 +65,10 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 
-# Create projects directory
-RUN mkdir -p /app/projects && chown -R iota:iota /app
+# Create projects directory with proper permissions
+RUN mkdir -p /app/projects && \
+    chown -R iota:iota /app && \
+    chmod -R 755 /app/projects
 
 # Environment variables
 ENV NODE_ENV=production
