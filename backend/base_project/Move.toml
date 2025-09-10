@@ -3,7 +3,6 @@ name = "user_project"
 edition = "2024.beta"
 
 [dependencies]
-Iota = { git = "https://github.com/iotaledger/iota.git", subdir = "crates/iota-framework/packages/iota-framework", rev = "framework/testnet" }
 
 [addresses]
 user_project = "0x0"
