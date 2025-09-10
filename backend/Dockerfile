@@ -46,8 +46,9 @@ RUN ARCH=$(uname -m) && \
         echo "x86_64 detected - installing IOTA CLI v1.4.1 for x86..." && \
         curl -L https://github.com/iotaledger/iota/releases/download/v1.4.1/iota-v1.4.1-linux-x86_64.tgz -o /tmp/iota.tgz; \
     fi && \
-    tar -xzf /tmp/iota.tgz -C /usr/local/bin/ && \
-    rm /tmp/iota.tgz && \
+    tar -xzf /tmp/iota.tgz -C /tmp/ && \
+    find /tmp -name "iota" -type f -executable -exec mv {} /usr/local/bin/iota \; && \
+    rm -rf /tmp/iota* && \
     chmod +x /usr/local/bin/iota && \
     iota --version
 
