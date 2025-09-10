@@ -10,8 +10,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install ALL dependencies (including dev) for building
+RUN npm ci
 
 # Copy source code
 COPY . .
@@ -60,10 +60,13 @@ RUN addgroup -g 1000 -S iota && \
     adduser -u 1000 -S iota -G iota && \
     chown -R iota:iota /app
 
-# Copy built application from builder stage
-COPY --from=builder --chown=iota:iota /app/node_modules ./node_modules
-COPY --from=builder --chown=iota:iota /app/dist ./dist
+# Copy package files first and install production dependencies
 COPY --chown=iota:iota package*.json ./
+RUN npm ci --only=production && \
+    npm cache clean --force
+
+# Copy built application from builder stage
+COPY --from=builder --chown=iota:iota /app/dist ./dist
 COPY --chown=iota:iota base_project ./base_project
 
 # Create projects directory for persistent storage
