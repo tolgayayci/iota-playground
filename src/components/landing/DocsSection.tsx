@@ -1,19 +1,14 @@
-import { motion } from 'framer-motion';
-import { 
-  BookOpen, 
-  FileText, 
-  MessageSquare, 
-  ExternalLink,
-} from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { motion } from "framer-motion";
+import { BookOpen, FileText, MessageSquare, ExternalLink } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 const RESOURCES = [
   {
     icon: BookOpen,
     title: "Getting Started",
     description: "Writing Your First Move Smart Contract on IOTA Playground",
-    href: "https://docs.iota.org/move",
+    href: "https://docs.iota.org/developer/references/iota-move",
     color: "from-blue-500/20 via-transparent to-transparent",
     badge: "Beginner",
     badgeColor: "bg-green-500/10 text-green-500",
@@ -22,7 +17,7 @@ const RESOURCES = [
     icon: FileText,
     title: "Official Documentation",
     description: "IOTA Move Documentation & Reference",
-    href: "https://docs.iota.org/move",
+    href: "https://docs.iota.org/developer/references/iota-move",
     color: "from-purple-500/20 via-transparent to-transparent",
     badge: "Official",
     badgeColor: "bg-blue-500/10 text-blue-500",
@@ -31,7 +26,7 @@ const RESOURCES = [
     icon: MessageSquare,
     title: "Community Support",
     description: "Join the IOTA Developer Discord",
-    href: "https://discord.gg/iota",
+    href: "https://discord.iota.org/",
     color: "from-pink-500/20 via-transparent to-transparent",
     badge: "Active",
     badgeColor: "bg-yellow-500/10 text-yellow-500",
@@ -41,7 +36,7 @@ const RESOURCES = [
 export function DocsSection() {
   return (
     <section className="container mx-auto py-24 lg:py-32">
-      <motion.div 
+      <motion.div
         className="text-center max-w-2xl mx-auto mb-16"
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -67,7 +62,7 @@ export function DocsSection() {
             whileHover={{ scale: 1.05 }}
             className="group relative"
           >
-            <motion.div 
+            <motion.div
               className={cn(
                 "absolute inset-0 bg-gradient-to-br rounded-lg",
                 resource.color
@@ -76,11 +71,11 @@ export function DocsSection() {
               whileHover={{ opacity: 0.2 }}
               transition={{ duration: 0.2 }}
             />
-            
-            <a 
+
+            <a
               href={resource.href}
               target="_blank"
-              rel="noopener noreferrer" 
+              rel="noopener noreferrer"
               className="relative block border rounded-lg bg-background/50 backdrop-blur-sm p-6 hover:border-primary/50 transition-colors"
             >
               <div className="flex items-center gap-4 mb-4">
@@ -93,7 +88,9 @@ export function DocsSection() {
               </div>
 
               <h3 className="text-xl font-semibold mb-2">{resource.title}</h3>
-              <p className="text-muted-foreground mb-4">{resource.description}</p>
+              <p className="text-muted-foreground mb-4">
+                {resource.description}
+              </p>
 
               <div className="flex items-center gap-2 text-sm text-primary">
                 <span>Learn more</span>

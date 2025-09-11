@@ -18,13 +18,17 @@ const FOOTER_LINKS = {
       href: "https://docs.iota.org/developer/references/iota-move",
       external: true,
     },
-    { label: "IOTA Docs", href: "https://docs.iota.org", external: true },
+    {
+      label: "IOTA Docs",
+      href: "https://docs.iota.org/developer",
+      external: true,
+    },
     {
       label: "GitHub",
       href: "https://github.com/tolgayayci/iota-playground",
       external: true,
     },
-    { label: "Discord", href: "https://discord.gg/iota", external: true },
+    { label: "Discord", href: "https://discord.iota.org/", external: true },
   ],
   legal: [
     { label: "Privacy Policy", href: "#" },
@@ -37,16 +41,19 @@ const LEARNING_RESOURCES = [
     icon: GraduationCap,
     title: "Interactive Tutorials",
     description: "Step-by-step guides for beginners",
+    href: "https://docs.iota.org/developer/tutorials/independent-ticketing-system/package",
   },
   {
     icon: Code2,
     title: "Code Examples",
     description: "Real-world contract examples",
+    href: "https://docs.iota.org/developer/tutorials/live-concert",
   },
   {
     icon: Users,
     title: "Community Support",
     description: "Get help from other developers",
+    href: "https://discord.iota.org/",
   },
 ];
 
@@ -148,17 +155,6 @@ export function Footer() {
           <p className="text-sm text-muted-foreground">
             © 2025 IOTA Playground. All rights reserved.
           </p>
-          <div className="flex items-center gap-4">
-            {FOOTER_LINKS.legal.map((link) => (
-              <a
-                key={link.label}
-                href={link.href}
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {link.label}
-              </a>
-            ))}
-          </div>
         </div>
       </div>
     </footer>
