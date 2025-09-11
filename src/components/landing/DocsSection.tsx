@@ -8,7 +8,7 @@ const RESOURCES = [
     icon: BookOpen,
     title: "Getting Started",
     description: "Writing Your First Move Smart Contract on IOTA Playground",
-    href: "https://docs.iota.org/developer/references/iota-move",
+    href: "https://docs.iota.org/developer/tutorials/sponsored-transactions/media-platform-package",
     color: "from-blue-500/20 via-transparent to-transparent",
     badge: "Beginner",
     badgeColor: "bg-green-500/10 text-green-500",

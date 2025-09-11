@@ -92,7 +92,7 @@ export function Footer() {
               </Button>
               <Button variant="outline" size="sm" className="gap-2" asChild>
                 <a
-                  href="https://docs.iota.org/move"
+                  href="https://docs.iota.org/developer/references/iota-move"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -132,21 +132,20 @@ export function Footer() {
                   key={index}
                   className="group flex items-center gap-3 p-3 rounded-lg border bg-muted/20 hover:border-primary/50 transition-all cursor-pointer"
                 >
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <resource.icon className="h-4 w-4 text-primary" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium group-hover:text-primary transition-colors">
-                      {resource.title}
+                  <a href={resource.href}>
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <resource.icon className="h-4 w-4 text-primary" />
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {resource.description}
+                    <div>
+                      <div className="text-sm font-medium group-hover:text-primary transition-colors">
+                        {resource.title}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {resource.description}
+                      </div>
                     </div>
-                  </div>
-                  <ExternalLink
-                    href={resource.href}
-                    className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity"
-                  />
+                    <ExternalLink className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </a>
                 </div>
               ))}
             </div>
