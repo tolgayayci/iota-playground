@@ -143,7 +143,10 @@ export function Footer() {
                       {resource.description}
                     </div>
                   </div>
-                  <ExternalLink className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <ExternalLink
+                    href={resource.href}
+                    className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity"
+                  />
                 </div>
               ))}
             </div>
