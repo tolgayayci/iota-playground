@@ -1,35 +1,52 @@
-import { Play, Github, ExternalLink, BookOpen, MessageSquare, GraduationCap, Code2, Users } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import {
+  Play,
+  Github,
+  ExternalLink,
+  BookOpen,
+  MessageSquare,
+  GraduationCap,
+  Code2,
+  Users,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const FOOTER_LINKS = {
   resources: [
-    { label: 'Documentation', href: 'https://docs.iota.org/move', external: true },
-    { label: 'IOTA Docs', href: 'https://docs.iota.org', external: true },
-    { label: 'GitHub', href: 'https://github.com/tolgayayci/iota-playground', external: true },
-    { label: 'Discord', href: 'https://discord.gg/iota', external: true },
+    {
+      label: "Documentation",
+      href: "https://docs.iota.org/developer/references/iota-move",
+      external: true,
+    },
+    { label: "IOTA Docs", href: "https://docs.iota.org", external: true },
+    {
+      label: "GitHub",
+      href: "https://github.com/tolgayayci/iota-playground",
+      external: true,
+    },
+    { label: "Discord", href: "https://discord.gg/iota", external: true },
   ],
   legal: [
-    { label: 'Privacy Policy', href: '#' },
-    { label: 'Terms of Use', href: '#' },
+    { label: "Privacy Policy", href: "#" },
+    { label: "Terms of Use", href: "#" },
   ],
 };
 
 const LEARNING_RESOURCES = [
   {
     icon: GraduationCap,
-    title: 'Interactive Tutorials',
-    description: 'Step-by-step guides for beginners',
+    title: "Interactive Tutorials",
+    description: "Step-by-step guides for beginners",
   },
   {
     icon: Code2,
-    title: 'Code Examples',
-    description: 'Real-world contract examples',
+    title: "Code Examples",
+    description: "Real-world contract examples",
   },
   {
     icon: Users,
-    title: 'Community Support',
-    description: 'Get help from other developers',
+    title: "Community Support",
+    description: "Get help from other developers",
   },
 ];
 
@@ -42,41 +59,34 @@ export function Footer() {
           <div className="lg:col-span-1">
             <div className="flex items-center gap-2 mb-4">
               <Play className="h-6 w-6" />
-              <span className={cn(
-                "text-lg font-bold tracking-tight",
-                "bg-gradient-to-r from-primary to-blue-500 bg-clip-text text-transparent"
-              )}>
+              <span
+                className={cn(
+                  "text-lg font-bold tracking-tight",
+                  "bg-gradient-to-r from-primary to-blue-500 bg-clip-text text-transparent"
+                )}
+              >
                 IOTA PLAYGROUND
               </span>
             </div>
             <p className="text-muted-foreground mb-6 max-w-sm">
-              The fastest way to build, test, and deploy Move smart contracts on IOTA.
+              The fastest way to build, test, and deploy Move smart contracts on
+              IOTA.
             </p>
             <div className="flex items-center gap-4">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="gap-2"
-                asChild
-              >
-                <a 
-                  href="https://github.com/tolgayayci/iota-playground" 
-                  target="_blank" 
+              <Button variant="outline" size="sm" className="gap-2" asChild>
+                <a
+                  href="https://github.com/tolgayayci/iota-playground"
+                  target="_blank"
                   rel="noopener noreferrer"
                 >
                   <Github className="h-4 w-4" />
                   Open Source
                 </a>
               </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="gap-2"
-                asChild
-              >
-                <a 
-                  href="https://docs.iota.org/move" 
-                  target="_blank" 
+              <Button variant="outline" size="sm" className="gap-2" asChild>
+                <a
+                  href="https://docs.iota.org/move"
+                  target="_blank"
                   rel="noopener noreferrer"
                 >
                   <ExternalLink className="h-4 w-4" />
@@ -111,7 +121,7 @@ export function Footer() {
             <h4 className="font-semibold mb-4">Learning Resources</h4>
             <div className="space-y-4">
               {LEARNING_RESOURCES.map((resource, index) => (
-                <div 
+                <div
                   key={index}
                   className="group flex items-center gap-3 p-3 rounded-lg border bg-muted/20 hover:border-primary/50 transition-all cursor-pointer"
                 >
