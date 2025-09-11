@@ -128,25 +128,26 @@ export function Footer() {
             <h4 className="font-semibold mb-4">Learning Resources</h4>
             <div className="space-y-4">
               {LEARNING_RESOURCES.map((resource, index) => (
-                <div
+                <a
                   key={index}
+                  href={resource.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="group flex items-center gap-3 p-3 rounded-lg border bg-muted/20 hover:border-primary/50 transition-all cursor-pointer"
                 >
-                  <a href={resource.href}>
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <resource.icon className="h-4 w-4 text-primary" />
+                  <div className="p-2 rounded-lg bg-primary/10">
+                    <resource.icon className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium group-hover:text-primary transition-colors">
+                      {resource.title}
                     </div>
-                    <div>
-                      <div className="text-sm font-medium group-hover:text-primary transition-colors">
-                        {resource.title}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {resource.description}
-                      </div>
+                    <div className="text-xs text-muted-foreground">
+                      {resource.description}
                     </div>
-                    <ExternalLink className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </a>
-                </div>
+                  </div>
+                  <ExternalLink className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+                </a>
               ))}
             </div>
           </div>
