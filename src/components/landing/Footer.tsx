@@ -1,5 +1,5 @@
 import {
-  Play,
+  Sparkles,
   Github,
   ExternalLink,
   BookOpen,
@@ -14,13 +14,18 @@ import { cn } from "@/lib/utils";
 const FOOTER_LINKS = {
   resources: [
     {
-      label: "Documentation",
+      label: "IOTA Move Docs",
       href: "https://docs.iota.org/developer/references/iota-move",
       external: true,
     },
     {
-      label: "IOTA Docs",
-      href: "https://docs.iota.org/developer",
+      label: "IOTA SDK",
+      href: "https://docs.iota.org/developer/getting-started/install-iota",
+      external: true,
+    },
+    {
+      label: "IOTA Community",
+      href: "https://discord.iota.org/",
       external: true,
     },
     {
@@ -59,25 +64,24 @@ const LEARNING_RESOURCES = [
 
 export function Footer() {
   return (
-    <footer className="border-t py-16 lg:py-24">
+    <footer className="border-t mb-8 pt-16">
       <div className="container mx-auto">
         <div className="grid gap-12 lg:grid-cols-3">
           {/* Brand Column */}
           <div className="lg:col-span-1">
-            <div className="flex items-center gap-2 mb-4">
-              <Play className="h-6 w-6" />
-              <span
-                className={cn(
-                  "text-lg font-bold tracking-tight",
-                  "bg-gradient-to-r from-primary to-blue-500 bg-clip-text text-transparent"
-                )}
-              >
-                IOTA PLAYGROUND
-              </span>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950">
+                <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <span className="text-xl font-bold text-gray-900 dark:text-white">
+                  IOTA Playground
+                </span>
+              </div>
             </div>
             <p className="text-muted-foreground mb-6 max-w-sm">
-              The fastest way to build, test, and deploy Move smart contracts on
-              IOTA.
+              The fastest way to build, test, and deploy IOTA Move smart
+              contracts.
             </p>
             <div className="flex items-center gap-4">
               <Button variant="outline" size="sm" className="gap-2" asChild>
@@ -133,7 +137,7 @@ export function Footer() {
                   href={resource.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group flex items-center gap-3 p-3 rounded-lg border bg-muted/20 hover:border-primary/50 transition-all cursor-pointer"
+                  className="group flex items-center gap-3 p-3 rounded-lg border bg-muted/20 hover:border-primary/50 transition-all cursor-pointer block"
                 >
                   <div className="p-2 rounded-lg bg-primary/10">
                     <resource.icon className="h-4 w-4 text-primary" />
@@ -158,6 +162,17 @@ export function Footer() {
           <p className="text-sm text-muted-foreground">
             © 2025 IOTA Playground. All rights reserved.
           </p>
+          <div className="flex items-center gap-4">
+            {FOOTER_LINKS.legal.map((link) => (
+              <a
+                key={link.label}
+                href={link.href}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
         </div>
       </div>
     </footer>
