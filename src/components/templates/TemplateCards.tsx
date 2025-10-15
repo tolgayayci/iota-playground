@@ -1,9 +1,10 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { ArrowRight } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { Code2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ProjectTemplate } from '@/lib/templates';
+import { useState, useRef, useEffect } from 'react';
 
 interface TemplateCardsProps {
   templates: ProjectTemplate[];
@@ -12,56 +13,172 @@ interface TemplateCardsProps {
 }
 
 export function TemplateCards({ templates, onUseTemplate, onPreviewTemplate }: TemplateCardsProps) {
-  return (
-    <div className="grid grid-cols-3 gap-4">
-      {templates.map((template) => {
-        const Icon = template.icon;
-        
-        return (
-          <Card
-            key={template.id}
-            className={cn(
-              "group relative overflow-hidden transition-all duration-200",
-              "hover:shadow-lg",
-              "border"
-            )}
-          >
-            <div className="p-6 space-y-4">
-              {/* Icon and Category */}
-              <div className="flex items-start justify-between">
-                <div className="p-2 rounded-lg bg-muted">
-                  <Icon className="h-6 w-6 text-muted-foreground" />
-                </div>
-                {template.category && (
-                  <Badge variant="secondary" className="text-xs">
-                    {template.category}
-                  </Badge>
-                )}
-              </div>
-              
-              {/* Title and Description */}
-              <div className="space-y-2">
-                <h3 className="text-base font-semibold">
-                  {template.name}
-                </h3>
-                <p className="text-sm text-muted-foreground line-clamp-2">
-                  {template.description}
-                </p>
-              </div>
+  // Category colors matching IOTA ecosystem
+  const getCategoryColor = (cat?: string) => {
+    switch (cat?.toLowerCase()) {
+      case 'token':
+        return 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-800';
+      case 'nft':
+        return 'text-violet-700 bg-violet-50 border-violet-200 dark:text-violet-300 dark:bg-violet-950/40 dark:border-violet-800';
+      case 'defi':
+        return 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/40 dark:border-blue-800';
+      case 'utility':
+        return 'text-gray-700 bg-gray-50 border-gray-200 dark:text-gray-300 dark:bg-gray-950/40 dark:border-gray-800';
+      case 'game':
+        return 'text-orange-700 bg-orange-50 border-orange-200 dark:text-orange-300 dark:bg-orange-950/40 dark:border-orange-800';
+      default:
+        return 'text-slate-700 bg-slate-50 border-slate-200 dark:text-slate-300 dark:bg-slate-950/40 dark:border-slate-800';
+    }
+  };
 
-              {/* Action Button */}
-              <Button
-                size="sm"
-                className="w-full"
-                onClick={() => onUseTemplate(template)}
-              >
-                Use Template
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </Card>
-        );
-      })}
+  // Difficulty colors
+  const getDifficultyColor = (diff?: string) => {
+    switch (diff) {
+      case 'beginner':
+        return 'text-green-800 bg-green-100 border-green-300 dark:text-green-200 dark:bg-green-950/60 dark:border-green-700';
+      case 'intermediate':
+        return 'text-amber-800 bg-amber-100 border-amber-300 dark:text-amber-200 dark:bg-amber-950/60 dark:border-amber-700';
+      case 'advanced':
+        return 'text-orange-800 bg-orange-100 border-orange-300 dark:text-orange-200 dark:bg-orange-950/60 dark:border-orange-700';
+      default:
+        return 'text-gray-700 bg-gray-100 border-gray-300 dark:text-gray-300 dark:bg-gray-800 dark:border-gray-600';
+    }
+  };
+
+  return (
+    <div className="h-full">
+      <div className="rounded-lg border bg-card overflow-hidden">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              <th className="h-11 px-6 text-left text-xs font-medium text-muted-foreground w-[30%]">
+                <div className="flex items-center gap-2">
+                  <Code2 className="h-4 w-4" />
+                  Template
+                </div>
+              </th>
+              <th className="h-11 px-6 text-left text-xs font-medium text-muted-foreground w-[50%]">
+                Description
+              </th>
+              <th className="h-11 px-6 text-right text-xs font-medium text-muted-foreground w-[20%]">
+                Action
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {templates.map((template) => (
+              <TemplateRow
+                key={template.id}
+                template={template}
+                onUseTemplate={onUseTemplate}
+                getCategoryColor={getCategoryColor}
+                getDifficultyColor={getDifficultyColor}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
+  );
+}
+
+interface TemplateRowProps {
+  template: ProjectTemplate;
+  onUseTemplate: (template: ProjectTemplate) => void;
+  getCategoryColor: (cat?: string) => string;
+  getDifficultyColor: (diff?: string) => string;
+}
+
+function TemplateRow({ template, onUseTemplate, getCategoryColor, getDifficultyColor }: TemplateRowProps) {
+  const [isTextTruncated, setIsTextTruncated] = useState(false);
+  const descriptionRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    const checkTruncation = () => {
+      if (descriptionRef.current) {
+        const element = descriptionRef.current;
+        setIsTextTruncated(element.scrollHeight > element.clientHeight);
+      }
+    };
+
+    checkTruncation();
+    window.addEventListener('resize', checkTruncation);
+    return () => window.removeEventListener('resize', checkTruncation);
+  }, [template.description]);
+
+  const Icon = template.icon;
+
+  return (
+    <tr className="group hover:bg-muted/30 border-b border-border transition-colors">
+      {/* Icon & Name */}
+      <td className="py-4 px-6 w-[30%]">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-md bg-muted/50">
+            <Icon className="h-4 w-4 text-foreground" />
+          </div>
+          <div>
+            <h3 className="font-medium text-foreground group-hover:text-primary transition-colors">
+              {template.name}
+            </h3>
+            <div className="flex items-center gap-2 mt-1">
+              {template.category && (
+                <Badge
+                  variant="outline"
+                  className={cn("text-xs px-2 py-0.5 border capitalize", getCategoryColor(template.category))}
+                >
+                  {template.category}
+                </Badge>
+              )}
+              {template.difficulty && (
+                <Badge
+                  variant="outline"
+                  className={cn("text-xs px-2 py-0.5 border capitalize", getDifficultyColor(template.difficulty))}
+                >
+                  {template.difficulty}
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+      </td>
+
+      {/* Description */}
+      <td className="py-4 px-6 w-[50%]">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <p
+                ref={descriptionRef}
+                className="text-sm text-muted-foreground leading-relaxed line-clamp-2 cursor-default"
+              >
+                {template.description}
+              </p>
+            </TooltipTrigger>
+            {isTextTruncated && (
+              <TooltipContent
+                className="max-w-sm p-3 text-xs leading-relaxed bg-popover text-popover-foreground border shadow-md"
+                side="top"
+                align="start"
+              >
+                {template.description}
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
+      </td>
+
+      {/* Action */}
+      <td className="py-4 px-6 w-[20%]">
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={() => onUseTemplate(template)}
+          >
+            Use Template
+          </Button>
+        </div>
+      </td>
+    </tr>
   );
 }

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Project } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
-import { 
-  Code2Icon, 
+import {
+  Code2Icon,
   MoreVerticalIcon,
   ExternalLinkIcon,
   Pencil,
@@ -12,6 +12,7 @@ import {
   GitBranch,
   Share2,
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -102,7 +103,7 @@ export function ProjectList({
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b bg-muted/50">
-              <th className="h-11 px-6 text-left text-xs font-medium text-muted-foreground w-[30%]">
+              <th className="h-12 px-6 text-left text-xs font-medium text-muted-foreground w-[30%]">
                 <div className="flex items-center gap-2">
                   Name
                 </div>
@@ -144,12 +145,25 @@ export function ProjectList({
               >
                 <td className="py-4 px-6">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-md bg-primary/5 group-hover:bg-primary/10">
+                    <div className="p-2 rounded-md bg-primary/10 group-hover:bg-primary/20">
                       <Code2Icon className="h-4 w-4 text-primary" />
                     </div>
-                    <span className="font-medium group-hover:text-primary truncate">
-                      {project.name}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium group-hover:text-primary truncate">
+                        {project.name}
+                      </span>
+                      {(project as any).deployment_count > 0 ? (
+                        <Badge variant="secondary" className="text-xs px-2 py-0.5 bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800 w-fit">
+                          <Network className="h-3 w-3 mr-1" />
+                          Deployed
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 w-fit">
+                          <Network className="h-3 w-3 mr-1" />
+                          Not Deployed
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </td>
                 <td className="py-4 px-6">
@@ -180,15 +194,18 @@ export function ProjectList({
                   </div>
                 </td>
                 <td className="py-4 px-6">
-                  <div className="flex items-center gap-2">
-                    <div className={cn(
-                      "h-2 w-2 rounded-full",
-                      project.is_public ? "bg-green-500" : "bg-red-500"
-                    )} />
-                    <span className="text-sm text-muted-foreground">
-                      {project.is_public ? 'Public' : 'Private'}
-                    </span>
-                  </div>
+                  <Badge
+                    variant="secondary"
+                    className={cn(
+                      "text-xs px-2 py-0.5 w-fit",
+                      project.is_public
+                        ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800"
+                        : "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800"
+                    )}
+                  >
+                    <Share2 className="h-3 w-3 mr-1" />
+                    {project.is_public ? 'Public' : 'Private'}
+                  </Badge>
                 </td>
                 <td className="pr-4">
                   <DropdownMenu>

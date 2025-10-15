@@ -49,6 +49,10 @@ export function WalletConnectionDialog({ open, onOpenChange }: WalletConnectionD
     if (isConnected) {
       return walletType === 'playground' ? 'playground' : 'external';
     }
+    // If no external wallets available, auto-select playground
+    if (availableWallets.length === 0) {
+      return 'playground';
+    }
     // Otherwise default to playground for testnet, external for mainnet
     return network === 'testnet' ? 'playground' : 'external';
   });
@@ -125,44 +129,44 @@ export function WalletConnectionDialog({ open, onOpenChange }: WalletConnectionD
           {/* Wallet Options */}
           <div className="space-y-4">
             {/* Playground Wallet Option */}
-            <div 
-              className={`relative group p-6 border-2 rounded-xl cursor-pointer transition-all duration-200 ${
-                selectedOption === 'playground' 
-                  ? 'border-primary bg-primary/5 shadow-md' 
+            <div
+              className={`relative group p-4 border-2 rounded-xl cursor-pointer transition-all duration-200 ${
+                selectedOption === 'playground'
+                  ? 'border-primary bg-primary/5 shadow-md'
                   : 'border-border hover:border-primary/50 hover:shadow-sm'
               } ${network !== 'testnet' ? 'opacity-60 cursor-not-allowed' : ''}`}
               onClick={() => network === 'testnet' && setSelectedOption('playground')}
             >
               {walletType === 'playground' && isConnected && (
-                <Badge className="absolute top-4 right-4 bg-green-500/10 text-green-600 border-green-500/20">
+                <Badge className="absolute top-3 right-3 bg-green-500/10 text-green-600 border-green-500/20">
                   Current
                 </Badge>
               )}
               <div className="flex items-start justify-between">
-                <div className="flex items-start gap-4 flex-1">
-                  <div className={`p-3 rounded-xl transition-colors ${
-                    selectedOption === 'playground' 
-                      ? 'bg-blue-100 dark:bg-blue-900' 
+                <div className="flex items-start gap-3 flex-1">
+                  <div className={`p-2 rounded-xl transition-colors ${
+                    selectedOption === 'playground'
+                      ? 'bg-blue-100 dark:bg-blue-900'
                       : 'bg-muted group-hover:bg-blue-50 dark:group-hover:bg-blue-950'
                   }`}>
-                    <TestTube className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                    <TestTube className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-semibold text-lg">Playground Wallet</h3>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <h3 className="font-semibold text-base">Playground Wallet</h3>
                       <Badge variant="outline" className="text-xs font-medium">
                         Testnet Only
                       </Badge>
                     </div>
-                    <p className="text-muted-foreground mb-3 leading-relaxed">
+                    <p className="text-muted-foreground text-sm mb-2 leading-relaxed">
                       Quick start with a pre-configured testnet wallet. Perfect for development and testing.
                     </p>
                     <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
-                      <TestTube className="h-4 w-4" />
+                      <TestTube className="h-3.5 w-3.5" />
                       <span>Free testnet tokens included</span>
                     </div>
                     {network !== 'testnet' && (
-                      <Alert className="mt-3 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+                      <Alert className="mt-2 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
                         <AlertCircle className="h-4 w-4 text-amber-600" />
                         <AlertDescription className="text-sm text-amber-700 dark:text-amber-300">
                           Switch to testnet to use playground wallet
@@ -172,58 +176,66 @@ export function WalletConnectionDialog({ open, onOpenChange }: WalletConnectionD
                   </div>
                 </div>
                 {selectedOption === 'playground' && (
-                  <Check className="h-6 w-6 text-primary mt-1 flex-shrink-0" />
+                  <Check className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
                 )}
               </div>
             </div>
 
             {/* External Wallet Option */}
-            <div 
-              className={`relative group p-6 border-2 rounded-xl cursor-pointer transition-all duration-200 ${
-                selectedOption === 'external' 
-                  ? 'border-primary bg-primary/5 shadow-md' 
+            <div
+              className={`relative group p-4 border-2 rounded-xl transition-all duration-200 ${
+                selectedOption === 'external'
+                  ? 'border-primary bg-primary/5 shadow-md'
                   : 'border-border hover:border-primary/50 hover:shadow-sm'
-              }`}
-              onClick={() => setSelectedOption('external')}
+              } ${availableWallets.length === 0 ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+              onClick={() => availableWallets.length > 0 && setSelectedOption('external')}
             >
               {walletType === 'external' && isConnected && (
-                <Badge className="absolute top-4 right-4 bg-green-500/10 text-green-600 border-green-500/20">
+                <Badge className="absolute top-3 right-3 bg-green-500/10 text-green-600 border-green-500/20">
                   Current
                 </Badge>
               )}
               <div className="flex items-start justify-between">
-                <div className="flex items-start gap-4 flex-1">
-                  <div className={`p-3 rounded-xl transition-colors ${
-                    selectedOption === 'external' 
-                      ? 'bg-green-100 dark:bg-green-900' 
+                <div className="flex items-start gap-3 flex-1">
+                  <div className={`p-2 rounded-xl transition-colors ${
+                    selectedOption === 'external'
+                      ? 'bg-green-100 dark:bg-green-900'
                       : 'bg-muted group-hover:bg-green-50 dark:group-hover:bg-green-950'
                   }`}>
-                    <Wallet className="h-6 w-6 text-green-600 dark:text-green-400" />
+                    <Wallet className="h-5 w-5 text-green-600 dark:text-green-400" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-semibold text-lg">External Wallet</h3>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <h3 className="font-semibold text-base">External Wallet</h3>
                       <Badge variant="outline" className="text-xs font-medium bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800">
                         Recommended
                       </Badge>
                     </div>
-                    <p className="text-muted-foreground mb-3 leading-relaxed">
+                    <p className="text-muted-foreground text-sm mb-2 leading-relaxed">
                       Connect with IOTA Wallet or other compatible wallets. Full control of your private keys.
                     </p>
-                    <div className="flex flex-wrap gap-3 text-sm">
-                      <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-                        <Shield className="h-4 w-4" />
+                    <div className="flex flex-wrap gap-2 text-sm">
+                      <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                        <Shield className="h-3.5 w-3.5" />
                         <span>Secure & Private</span>
                       </div>
-                      <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-                        <Globe className="h-4 w-4" />
+                      <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                        <Globe className="h-3.5 w-3.5" />
                         <span>Mainnet & Testnet</span>
                       </div>
                     </div>
+                    {availableWallets.length === 0 && (
+                      <Alert className="mt-2 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+                        <AlertCircle className="h-4 w-4 text-amber-600" />
+                        <AlertDescription className="text-sm text-amber-700 dark:text-amber-300">
+                          No wallet detected - Install IOTA Wallet
+                        </AlertDescription>
+                      </Alert>
+                    )}
                   </div>
                 </div>
                 {selectedOption === 'external' && (
-                  <Check className="h-6 w-6 text-primary mt-1 flex-shrink-0" />
+                  <Check className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
                 )}
               </div>
             </div>
@@ -284,16 +296,21 @@ export function WalletConnectionDialog({ open, onOpenChange }: WalletConnectionD
 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-3">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="flex-1 h-12"
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button 
+            <Button
               className="flex-1 h-12 font-medium"
-              disabled={!selectedOption || isConnecting || (selectedOption === 'playground' && network !== 'testnet')}
+              disabled={
+                !selectedOption ||
+                isConnecting ||
+                (selectedOption === 'playground' && network !== 'testnet') ||
+                (selectedOption === 'external' && availableWallets.length === 0)
+              }
               onClick={() => {
                 if (selectedOption === 'playground') {
                   handlePlaygroundWallet();
@@ -305,7 +322,12 @@ export function WalletConnectionDialog({ open, onOpenChange }: WalletConnectionD
               {isConnecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {!isConnecting && selectedOption === 'playground' && <TestTube className="mr-2 h-4 w-4" />}
               {!isConnecting && selectedOption === 'external' && <Wallet className="mr-2 h-4 w-4" />}
-              {selectedOption === 'playground' ? 'Connect Playground Wallet' : 'Connect External Wallet'}
+              {selectedOption === 'external' && availableWallets.length === 0
+                ? 'No Wallets Available'
+                : selectedOption === 'playground'
+                  ? 'Connect Playground Wallet'
+                  : 'Connect External Wallet'
+              }
             </Button>
           </div>
         </div>

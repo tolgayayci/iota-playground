@@ -13,12 +13,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
-import {
-  RocketIcon,
-  CheckCircle,
+import { 
+  RocketIcon, 
+  CheckCircle, 
   Loader2,
   ExternalLink,
   Copy,
@@ -37,11 +34,7 @@ import {
   Bug,
   TestTube,
   Package,
-  FileText,
-  Upload,
-  Globe,
-  Circle,
-  Eye
+  FileText
 } from 'lucide-react';
 import { CompilationResult } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
@@ -133,8 +126,7 @@ export function DeployDialogV2({
   const [showWalletConnectionDialog, setShowWalletConnectionDialog] = useState(false);
   const [walletBalance, setWalletBalance] = useState<string | null>(null);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
-
+  
   const { toast } = useToast();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
   const { mutate: connectWallet } = useConnectWallet();
@@ -1118,16 +1110,6 @@ export function DeployDialogV2({
     });
   };
 
-  const handleCopy = (text: string, field: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
-    toast({
-      title: "Copied",
-      description: `${field} copied to clipboard`,
-    });
-  };
-
   if (!lastCompilation) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1246,295 +1228,492 @@ export function DeployDialogV2({
 
                 {/* Deployment Progress */}
                 {isDeploying && (
-                  <div className="rounded-lg border bg-card p-4 space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                      <span className="text-sm font-medium">Broadcasting Transaction...</span>
+                  <div className="rounded-lg border bg-muted/30 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Activity className="h-4 w-4 animate-pulse" />
+                      <span className="font-medium">Deployment Progress</span>
                     </div>
-
-                    <div className="space-y-2">
-                      {deploymentSteps.map((step) => {
-                        const isComplete = deploymentStep > step.id;
-                        const isCurrent = deploymentStep === step.id;
-
-                        // Map step icons
-                        let StepIcon = Circle;
-                        if (step.id === 0) StepIcon = Package;
-                        else if (step.id === 1) StepIcon = Zap;
-                        else if (step.id === 2) StepIcon = FileText;
-                        else if (step.id === 3) StepIcon = Upload;
-                        else if (step.id === 4) StepIcon = Loader2;
-                        else if (step.id === 5) StepIcon = CheckCircle;
-
-                        return (
-                          <div key={step.id} className="flex items-center gap-3">
-                            {isComplete ? (
-                              <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
-                            ) : isCurrent ? (
-                              <Loader2 className="h-4 w-4 animate-spin text-blue-500 flex-shrink-0" />
-                            ) : (
-                              <Circle className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                            )}
-                            <span
-                              className={cn(
-                                "text-sm",
-                                isComplete || isCurrent ? "font-medium" : "text-muted-foreground"
-                              )}
-                            >
+                    <div className="space-y-3">
+                      {deploymentSteps.map((step, index) => (
+                        <div key={step.id} className="flex items-center gap-3">
+                          <div className={cn(
+                            "w-2 h-2 rounded-full",
+                            deploymentStep > step.id 
+                              ? "bg-green-500" 
+                              : deploymentStep === step.id 
+                                ? "bg-blue-500 animate-pulse" 
+                                : "bg-muted-foreground/30"
+                          )} />
+                          <div className="flex-1">
+                            <div className={cn(
+                              "text-sm",
+                              deploymentStep >= step.id ? "text-foreground" : "text-muted-foreground"
+                            )}>
                               {step.label}
-                            </span>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {step.description}
+                            </div>
                           </div>
-                        );
-                      })}
+                          {deploymentStep === step.id && (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          )}
+                          {deploymentStep > step.id && (
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          )}
+                        </div>
+                      ))}
                     </div>
-
-                    <Progress value={(deploymentStep / (deploymentSteps.length - 1)) * 100} className="h-2" />
                   </div>
                 )}
 
-                {/* Unified Wallet Status Card */}
-                <div className="rounded-lg border bg-card">
-                  {/* Header */}
-                  <div className="p-4 border-b">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          "p-2 rounded-lg",
-                          isWalletConnected ? "bg-green-500/10" : "bg-muted"
-                        )}>
-                          {selectedWalletType === 'playground' ? (
-                            <TestTube className={cn(
-                              "h-4 w-4",
-                              isWalletConnected ? "text-green-600" : "text-muted-foreground"
-                            )} />
-                          ) : (
-                            <Wallet className={cn(
-                              "h-4 w-4",
-                              isWalletConnected ? "text-green-600" : "text-muted-foreground"
-                            )} />
-                          )}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium text-sm">
-                              {selectedWalletType === 'playground' ? 'Playground Wallet' : 'External Wallet'}
-                            </p>
-                            {selectedWalletType === 'playground' && network === 'mainnet' && (
-                              <Badge variant="secondary" className="text-xs">Testnet Only</Badge>
-                            )}
+                {/* Wallet Selection Card - Clean Design */}
+                <div className="space-y-4">
+                  {/* Auto-detect wallet or show options */}
+                  {currentAccount ? (
+                    // External wallet is connected
+                    <div className="rounded-lg border-2 border-green-500/30 bg-gradient-to-r from-green-500/5 via-green-500/10 to-emerald-500/5 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 rounded-full bg-green-500/20">
+                            <Wallet className="h-4 w-4 text-green-600 dark:text-green-500" />
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            {isWalletConnected ? 'Connected' : 'Not Connected'}
-                          </p>
+                          <div>
+                            <p className="font-medium text-green-900 dark:text-green-100">External Wallet Connected</p>
+                            <p className="text-xs text-green-700 dark:text-green-400">Ready to deploy to {network}</p>
+                          </div>
                         </div>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowWalletConnectionDialog(true)}
-                      >
-                        <RefreshCw className="h-3.5 w-3.5 mr-2" />
-                        Change
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Wallet Details - Only show when connected */}
-                  {isWalletConnected && walletAddress && (
-                    <div className="p-4 space-y-3 border-b">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">Address</span>
-                        <div className="flex items-center gap-2">
-                          <code className="text-xs font-mono bg-muted px-2 py-1 rounded">
-                            {walletAddress.slice(0, 8)}...{walletAddress.slice(-6)}
-                          </code>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => handleCopy(walletAddress, 'Address')}
-                          >
-                            {copiedField === 'Address' ? (
-                              <CheckCircle className="h-3 w-3 text-green-500" />
-                            ) : (
-                              <Copy className="h-3 w-3" />
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">Balance</span>
-                        <div className="flex items-center gap-2">
-                          {isLoadingBalance ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <span className="text-sm font-mono">{walletBalance || '0.0000'} IOTA</span>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={fetchWalletBalance}
-                            title="Refresh balance"
-                          >
-                            <RefreshCw className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">Network</span>
-                        <Badge variant={network === 'mainnet' ? 'destructive' : 'secondary'} className="text-xs">
-                          <Globe className="h-3 w-3 mr-1" />
-                          {network.toUpperCase()}
+                        <Badge className="bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30 font-semibold">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Connected
                         </Badge>
                       </div>
-                    </div>
-                  )}
-
-                  {/* Gas Estimation */}
-                  {publishData && isWalletConnected && (
-                    <div className="p-4 bg-muted/30">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Zap className="h-4 w-4 text-amber-600" />
-                          <span className="text-sm font-medium">Estimated Gas</span>
+                      
+                      <div className="space-y-2 mt-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Address</span>
+                          <div className="flex items-center gap-1">
+                            <code className="text-xs bg-muted px-2 py-1 rounded">
+                              {currentAccount.address.slice(0, 8)}...{currentAccount.address.slice(-6)}
+                            </code>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => copyToClipboard(currentAccount.address)}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </div>
-                        <span className="text-sm font-mono font-semibold">~0.001 IOTA</span>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Balance</span>
+                          <div className="flex items-center gap-2">
+                            {isLoadingBalance ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Badge variant="outline" className="font-mono text-xs">
+                                <Coins className="h-3 w-3 mr-1" />
+                                {walletBalance || '0.0000'} IOTA
+                              </Badge>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 p-0"
+                              onClick={fetchWalletBalance}
+                              title="Refresh balance"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Wallet Network</span>
+                          <Badge variant={network === 'mainnet' ? 'destructive' : 'secondary'}>
+                            {network}
+                          </Badge>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Approximate cost for this deployment
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Not Connected State */}
-                  {!isWalletConnected && (
-                    <div className="p-4">
-                      <Alert>
-                        <AlertCircle className="h-4 w-4" />
+                      
+                      {/* Network Warning for External Wallets */}
+                      <Alert className="mt-3 border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
+                        <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
                         <AlertDescription className="text-sm">
-                          {selectedWalletType === 'external' && availableWallets.length === 0 ? (
-                            <div className="space-y-2">
-                              <p className="font-medium">No wallet detected</p>
-                              <p className="text-xs text-muted-foreground">
-                                Install IOTA Wallet extension to continue
-                              </p>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="w-full mt-2"
-                                onClick={handleConnectWallet}
-                              >
-                                <ExternalLink className="h-3.5 w-3.5 mr-2" />
-                                Install Wallet
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              <p className="font-medium">Connect wallet to deploy</p>
-                              <Button
-                                size="sm"
-                                className="w-full mt-2"
-                                onClick={handleConnectWallet}
-                              >
-                                <Wallet className="h-3.5 w-3.5 mr-2" />
-                                Connect Wallet
-                              </Button>
-                            </div>
-                          )}
+                          <p className="font-medium text-amber-800 dark:text-amber-300 mb-1">Network Verification Required</p>
+                          <p className="text-amber-700 dark:text-amber-400 text-xs mb-2">
+                            Your app is set to <strong className="text-amber-800 dark:text-amber-200">{network}</strong>. Please ensure your IOTA Wallet is on the same network.
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-7 border-amber-500/50 hover:bg-amber-100 dark:hover:bg-amber-900"
+                              onClick={() => {
+                                // Try to open wallet extension settings
+                                // This will open the extension popup which usually shows current network
+                                toast({
+                                  title: "Check Your Wallet",
+                                  description: "Please verify and switch network in your IOTA Wallet extension if needed.",
+                                });
+                                // Attempt to trigger a benign wallet interaction to open it
+                                if (currentAccount) {
+                                  // This might open the wallet popup
+                                  window.dispatchEvent(new CustomEvent('wallet-check-network'));
+                                }
+                              }}
+                            >
+                              <ExternalLink className="h-3 w-3 mr-1" />
+                              Open Wallet
+                            </Button>
+                            <span className="text-xs text-amber-600 dark:text-amber-400">→ Switch to {network}</span>
+                          </div>
                         </AlertDescription>
                       </Alert>
+                      
+                      {/* Change Wallet Button */}
+                      <div className="mt-3 pt-3 border-t">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => setShowWalletConnectionDialog(true)}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Change Wallet
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    // No external wallet - show wallet options
+                    <div className="space-y-3">
+                      {/* No Wallet Alert */}
+                      {!isPlaygroundConnected && !isExternalConnected && (
+                        <Alert className="border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
+                          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+                          <AlertDescription className="text-sm text-amber-800 dark:text-amber-300">
+                            Select a wallet option below to proceed with deployment
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                      {/* Playground Wallet Option */}
+                      <button
+                        onClick={() => handleWalletTypeChange('playground')}
+                        disabled={network === 'mainnet'}
+                        className={cn(
+                          "relative rounded-lg border-2 p-4 text-left transition-all",
+                          selectedWalletType === 'playground' 
+                            ? "border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20" 
+                            : network === 'mainnet'
+                            ? "border-muted bg-muted/30 opacity-50 cursor-not-allowed"
+                            : "border-muted hover:border-blue-400 hover:shadow-md hover:bg-blue-50/50 dark:hover:bg-blue-950/20"
+                        )}
+                      >
+                        {selectedWalletType === 'playground' && (
+                          <div className="absolute top-2 right-2">
+                            <CheckCircle className="h-4 w-4 text-primary" />
+                          </div>
+                        )}
+                        <div className="space-y-2">
+                          <div className={cn(
+                            "p-2 rounded-lg w-fit",
+                            selectedWalletType === 'playground' ? "bg-blue-500/20" : "bg-blue-500/10"
+                          )}>
+                            <TestTube className={cn(
+                              "h-5 w-5",
+                              network === 'mainnet' ? "text-muted-foreground" : "text-blue-600 dark:text-blue-500"
+                            )} />
+                          </div>
+                          <div>
+                            <p className={cn(
+                              "font-medium",
+                              network === 'mainnet' ? "text-muted-foreground" : ""
+                            )}>Playground Wallet</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {network === 'mainnet' ? "Not available on mainnet" : "Zero-config testnet deployment"}
+                            </p>
+                          </div>
+                          {network === 'mainnet' && (
+                            <Badge variant="destructive" className="text-xs">
+                              <AlertCircle className="h-3 w-3 mr-1" />
+                              Testnet only
+                            </Badge>
+                          )}
+                        </div>
+                      </button>
+
+                      {/* External Wallet Option */}
+                      <button
+                        onClick={() => handleWalletTypeChange('external')}
+                        className={cn(
+                          "relative rounded-lg border-2 p-4 text-left transition-all",
+                          selectedWalletType === 'external' 
+                            ? "border-purple-500 bg-purple-500/10 shadow-lg shadow-purple-500/20" 
+                            : "border-muted hover:border-purple-400 hover:shadow-md hover:bg-purple-50/50 dark:hover:bg-purple-950/20"
+                        )}
+                      >
+                        {selectedWalletType === 'external' && (
+                          <div className="absolute top-2 right-2">
+                            <CheckCircle className="h-4 w-4 text-primary" />
+                          </div>
+                        )}
+                        <div className="space-y-2">
+                          <div className={cn(
+                            "p-2 rounded-lg w-fit",
+                            selectedWalletType === 'external' ? "bg-purple-500/20" : "bg-purple-500/10"
+                          )}>
+                            <Wallet className="h-5 w-5 text-purple-600 dark:text-purple-500" />
+                          </div>
+                          <div>
+                            <p className="font-medium">External Wallet</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Use your wallet for {network} deployment
+                            </p>
+                          </div>
+                          {network === 'mainnet' && (
+                            <Badge className="text-xs bg-amber-500/10 text-amber-700 dark:text-amber-500 border-amber-500/20">
+                              <Zap className="h-3 w-3 mr-1" />
+                              Mainnet ready
+                            </Badge>
+                          )}
+                        </div>
+                      </button>
+                    </div>
+                    </div>
+                  )}
+
+                  {/* Connect Button if needed */}
+                  {!currentAccount && selectedWalletType === 'external' && (
+                    <>
+                      {availableWallets.length === 0 && (
+                        <Alert className="border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
+                          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+                          <AlertDescription className="text-sm">
+                            <div className="space-y-2">
+                              <p className="font-medium text-amber-800 dark:text-amber-300">No wallet extension detected</p>
+                              <p className="text-amber-700 dark:text-amber-400 text-xs">
+                                Install the IOTA Wallet extension to deploy with your own wallet.
+                              </p>
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      <Button 
+                        variant="default" 
+                        className="w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white shadow-lg shadow-purple-500/25"
+                        onClick={handleConnectWallet}
+                      >
+                        <Wallet className="mr-2 h-4 w-4" />
+                        {availableWallets.length > 0 ? 'Connect IOTA Wallet' : 'Install Wallet Extension'}
+                      </Button>
+                    </>
+                  )}
+
+                  {/* Playground wallet info */}
+                  {selectedWalletType === 'playground' && !currentAccount && network === 'testnet' && (
+                    <div className="rounded-lg border bg-card p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 rounded-lg bg-primary/10">
+                            <TestTube className="h-4 w-4 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-medium">Playground Wallet</p>
+                            <p className="text-xs text-muted-foreground">Pre-funded testnet wallet</p>
+                          </div>
+                        </div>
+                        <Badge variant="secondary" className="gap-1">
+                          <CheckCircle className="h-3 w-3 text-green-500" />
+                          Active
+                        </Badge>
+                      </div>
+                      
+                      <div className="space-y-2 mt-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Address</span>
+                          <code className="text-xs font-mono">
+                            {playgroundAddress ? `${playgroundAddress.slice(0, 8)}...${playgroundAddress.slice(-6)}` : 'Loading...'}
+                          </code>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Balance</span>
+                          <div className="flex items-center gap-2">
+                            {isLoadingBalance ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Badge variant="secondary" className="font-mono text-xs">
+                                <Coins className="h-3 w-3 mr-1" />
+                                {walletBalance || '0.0000'} IOTA
+                              </Badge>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 p-0"
+                              onClick={fetchWalletBalance}
+                              title="Refresh balance"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Network</span>
+                          <Badge variant="outline" className="text-xs">{network}</Badge>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Features</span>
+                          <div className="flex gap-1">
+                            <Badge variant="secondary" className="text-xs">Zero gas</Badge>
+                            <Badge variant="secondary" className="text-xs">Auto-funded</Badge>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Change Wallet Button */}
+                      <div className="mt-3 pt-3 border-t">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => setShowWalletConnectionDialog(true)}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Change Wallet
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
 
-                {/* Deployment Result */}
-                {deploymentResult && deploymentResult.success && (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2 p-4 rounded-lg border border-green-500/50 bg-green-500/5">
-                      <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">Deployment Successful</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Contract deployed to {network}
-                        </p>
+                {/* Gas Estimation */}
+                {lastCompilation?.success && publishData && (
+                    <div className="rounded-lg border bg-card">
+                      <div className="p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Zap className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">Gas Estimation</span>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {network === 'testnet' ? 'Testnet' : 'Mainnet'}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <span className="text-xs text-muted-foreground">Estimated Cost</span>
+                            <p className="font-mono text-sm font-medium">
+                              {publishData.estimatedCost || '~0.100 IOTA'}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <span className="text-xs text-muted-foreground">Gas Budget</span>
+                            <p className="font-mono text-sm font-medium">
+                              {publishData.gasEstimate ? `${(publishData.gasEstimate / 1000000000).toFixed(3)} IOTA` : '~0.100 IOTA'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between pt-3 border-t">
+                          <div className="flex items-center gap-2">
+                            <Package className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground">Package contains {publishData.modules.length} module{publishData.modules.length !== 1 ? 's' : ''}</span>
+                          </div>
+                          {selectedWalletType === 'playground' && network === 'testnet' && (
+                            <Badge variant="secondary" className="text-xs gap-1">
+                              <CheckCircle className="h-3 w-3 text-green-500" />
+                              Free
+                            </Badge>
+                          )}
+                        </div>
+                        {selectedWalletType === 'external' && (
+                          <div className="mt-3 p-2 bg-amber-50/50 dark:bg-amber-950/20 rounded text-xs text-amber-700 dark:text-amber-400">
+                            <div className="flex items-start gap-1">
+                              <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                              <div className="flex-1">
+                                <span>Deploying to <strong className="text-amber-800 dark:text-amber-200">{network.toUpperCase()}</strong></span>
+                                <div className="mt-1 text-[11px] opacity-90">
+                                  ⚠️ Ensure your wallet is on {network} before signing
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
+                  )}
 
-                    <div className="space-y-3 border rounded-lg p-4">
-                      {/* Package ID */}
-                      {deploymentResult.packageId && (
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-muted-foreground">Package ID</label>
-                          <div className="flex items-center gap-2">
-                            <code className="flex-1 font-mono text-xs bg-muted/50 px-3 py-2 rounded border truncate">
-                              {deploymentResult.packageId}
-                            </code>
+                {/* Deployment Result */}
+                {deploymentResult && deploymentResult.success && (
+                  <div className="rounded-lg border bg-card border-green-200">
+                    <div className="p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <CheckCircle className="h-5 w-5 text-green-500" />
+                        <span className="font-medium text-green-700">Deployment Successful!</span>
+                        <Badge variant="secondary" className="bg-green-500/10 text-green-600 border-green-200">
+                          Deployed
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 text-sm">
+                        {deploymentResult.packageId && (
+                          <div className="flex items-center justify-between py-2 px-3 rounded-md bg-green-50 border border-green-100">
+                            <span className="text-green-700 font-medium">Package ID</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs text-green-600">
+                                {deploymentResult.packageId.slice(0, 12)}...{deploymentResult.packageId.slice(-8)}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => copyToClipboard(deploymentResult.packageId || '')}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                        {deploymentResult.transactionDigest && (
+                          <div className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/50">
+                            <span className="text-muted-foreground font-medium">Transaction</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs">
+                                {deploymentResult.transactionDigest.slice(0, 12)}...{deploymentResult.transactionDigest.slice(-8)}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => copyToClipboard(deploymentResult.transactionDigest || '')}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                        {deploymentResult.gasUsed && (
+                          <div className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/50">
+                            <span className="text-muted-foreground font-medium">Gas Used</span>
+                            <span className="font-mono text-xs">
+                              {formatGas(deploymentResult.gasUsed)} IOTA
+                            </span>
+                          </div>
+                        )}
+                        {deploymentResult.explorerUrl && (
+                          <div className="pt-2">
                             <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 flex-shrink-0"
-                              onClick={() => handleCopy(deploymentResult.packageId!, 'Package ID')}
-                            >
-                              {copiedField === 'Package ID' ? (
-                                <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-                              ) : (
-                                <Copy className="h-3.5 w-3.5" />
-                              )}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 flex-shrink-0"
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
                               onClick={() => window.open(deploymentResult.explorerUrl, '_blank')}
                             >
-                              <ExternalLink className="h-3.5 w-3.5" />
+                              <ExternalLink className="mr-2 h-4 w-4" />
+                              View in Explorer
                             </Button>
                           </div>
-                        </div>
-                      )}
-
-                      {/* Transaction Hash */}
-                      {deploymentResult.transactionDigest && (
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium text-muted-foreground">Transaction Hash</label>
-                          <div className="flex items-center gap-2">
-                            <code className="flex-1 font-mono text-xs bg-muted/50 px-3 py-2 rounded border truncate">
-                              {deploymentResult.transactionDigest}
-                            </code>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 flex-shrink-0"
-                              onClick={() => handleCopy(deploymentResult.transactionDigest!, 'Transaction Hash')}
-                            >
-                              {copiedField === 'Transaction Hash' ? (
-                                <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-                              ) : (
-                                <Copy className="h-3.5 w-3.5" />
-                              )}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 flex-shrink-0"
-                              onClick={() => window.open(deploymentResult.explorerUrl, '_blank')}
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Gas Info */}
-                      {deploymentResult.gasUsed && (
-                        <div className="flex items-center justify-between pt-3 border-t">
-                          <span className="text-xs text-muted-foreground">Gas Used</span>
-                          <div className="font-mono text-sm">{formatGas(deploymentResult.gasUsed)} IOTA</div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}

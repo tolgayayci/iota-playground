@@ -91,350 +91,153 @@ const HELLO_WORLD_CODE = `module hello_world::greetings {
     }
 }`;
 
-// Counter Contract Template - State management example
+// Counter Contract Template - State management example (Official IOTA Example)
 const COUNTER_CODE = `module counter::counter {
-    use iota::object::{Self, UID};
-    use iota::tx_context::{Self, TxContext};
-    use iota::transfer;
-    use iota::event;
+    /// A shared counter that demonstrates basic shared object functionality.
+    /// Rules:
+    /// - Anyone can create and share a counter
+    /// - Everyone can increment a counter by 1
+    /// - The owner of the counter can reset it to any value
 
-    /// Error codes
-    const ECounterOverflow: u64 = 0;
-    const ECounterUnderflow: u64 = 1;
-    const ENotOwner: u64 = 2;
-
-    /// Counter object that maintains a count value
-    public struct Counter has key, store {
+    /// A shared counter object
+    public struct Counter has key {
         id: UID,
-        value: u64,
         owner: address,
+        value: u64
     }
 
-    /// Event emitted when counter value changes
-    public struct CounterUpdated has copy, drop {
-        old_value: u64,
-        new_value: u64,
-        action: vector<u8>, // "increment", "decrement", "reset", etc.
+    /// Get the counter owner
+    public fun owner(counter: &Counter): address {
+        counter.owner
     }
 
-    /// Create a new counter with an initial value
-    public entry fun create_counter(
-        initial_value: u64, 
-        ctx: &mut TxContext
-    ) {
-        let counter = Counter {
-            id: object::new(ctx),
-            value: initial_value,
-            owner: tx_context::sender(ctx),
-        };
-        
-        // Transfer ownership to the creator
-        transfer::public_transfer(counter, tx_context::sender(ctx));
-    }
-
-    /// Create a shared counter that anyone can interact with
-    public entry fun create_shared_counter(
-        initial_value: u64,
-        ctx: &mut TxContext
-    ) {
-        let counter = Counter {
-            id: object::new(ctx),
-            value: initial_value,
-            owner: @0x0, // No specific owner for shared counter
-        };
-        
-        // Make it a shared object
-        transfer::public_share_object(counter);
-    }
-
-    /// Increment the counter by 1
-    public entry fun increment(counter: &mut Counter) {
-        let old_value = counter.value;
-        
-        // Check for overflow
-        assert!(counter.value < 18446744073709551615, ECounterOverflow);
-        counter.value = counter.value + 1;
-        
-        // Emit event
-        event::emit(CounterUpdated {
-            old_value,
-            new_value: counter.value,
-            action: b"increment",
-        });
-    }
-    
-    /// Increment the counter by a specific amount
-    public entry fun increment_by(counter: &mut Counter, amount: u64) {
-        let old_value = counter.value;
-        
-        // Check for overflow
-        assert!(counter.value <= 18446744073709551615 - amount, ECounterOverflow);
-        counter.value = counter.value + amount;
-        
-        event::emit(CounterUpdated {
-            old_value,
-            new_value: counter.value,
-            action: b"increment_by",
-        });
-    }
-    
-    /// Decrement the counter by 1
-    public entry fun decrement(counter: &mut Counter) {
-        let old_value = counter.value;
-        
-        // Check for underflow
-        assert!(counter.value > 0, ECounterUnderflow);
-        counter.value = counter.value - 1;
-        
-        event::emit(CounterUpdated {
-            old_value,
-            new_value: counter.value,
-            action: b"decrement",
-        });
-    }
-    
-    /// Reset the counter to zero
-    public entry fun reset(counter: &mut Counter, ctx: &mut TxContext) {
-        // Only owner can reset (if not shared)
-        if (counter.owner != @0x0) {
-            assert!(counter.owner == tx_context::sender(ctx), ENotOwner);
-        };
-        
-        let old_value = counter.value;
-        counter.value = 0;
-        
-        event::emit(CounterUpdated {
-            old_value,
-            new_value: 0,
-            action: b"reset",
-        });
-    }
-    
-    /// Get the current counter value (view function)
-    public fun get_value(counter: &Counter): u64 {
+    /// Get the counter value
+    public fun value(counter: &Counter): u64 {
         counter.value
     }
-    
-    /// Check if an address is the owner
-    public fun is_owner(counter: &Counter, addr: address): bool {
-        counter.owner == addr
+
+    /// Create and share a Counter object with initial value 0
+    public entry fun create(ctx: &mut TxContext) {
+        transfer::share_object(Counter {
+            id: object::new(ctx),
+            owner: tx_context::sender(ctx),
+            value: 0
+        })
+    }
+
+    /// Increment the counter by 1 (anyone can call this)
+    public entry fun increment(counter: &mut Counter) {
+        counter.value = counter.value + 1;
+    }
+
+    /// Set value to a specific number (only owner can call this)
+    public entry fun set_value(counter: &mut Counter, value: u64, ctx: &TxContext) {
+        assert!(counter.owner == tx_context::sender(ctx), 0);
+        counter.value = value;
+    }
+
+    /// Assert a specific value for the counter (for testing)
+    public fun assert_value(counter: &Counter, value: u64) {
+        assert!(counter.value == value, 0)
+    }
+
+    /// Delete the counter (only owner can call this)
+    public entry fun delete(counter: Counter, ctx: &TxContext) {
+        assert!(counter.owner == tx_context::sender(ctx), 0);
+        let Counter { id, owner: _, value: _ } = counter;
+        object::delete(id);
     }
 }`;
 
-// Coffee Shop Template - From IOTA documentation example
+// Coffee Shop Template - Official IOTA Documentation Example
 const COFFEE_CODE = `module coffee_shop::coffee {
-    use std::string::{Self, String};
-    use std::option::{Self, Option};
-    use iota::coin::{Self, Coin, TreasuryCap};
-    use iota::transfer;
-    use iota::tx_context::{Self, TxContext};
+    use std::option;
+    use iota::tx_context::{Self, sender};
+    use iota::coin::{Self, TreasuryCap, Coin};
     use iota::balance::{Self, Balance};
-    use iota::object::{Self, UID};
-    use iota::event;
-    use iota::url::{Self, Url};
+    use iota::token::{Self, Token};
+    use iota::iota::IOTA;
 
     /// Error codes
-    const EInsufficientPayment: u64 = 0;
-    const EInvalidLoyaltyPoints: u64 = 1;
-    const EShopClosed: u64 = 2;
+    const EIncorrectAmount: u64 = 0;
+    const ENotEnoughPoints: u64 = 1;
+
+    /// Price per coffee: 10 IOTA
+    const COFFEE_PRICE: u64 = 10_000_000_000;
 
     /// One-Time Witness for the COFFEE token
-    /// This struct is created once when the module is published
     public struct COFFEE has drop {}
 
-    /// The Coffee Shop object that manages sales and loyalty
+    /// The Coffee Shop that holds coffee points treasury and IOTA balance
     public struct CoffeeShop has key {
         id: UID,
-        owner: address,
-        balance: Balance<COFFEE>,
-        price_per_coffee: u64,
-        loyalty_per_coffee: u64,
-        is_open: bool,
+        coffee_points: TreasuryCap<COFFEE>,
+        balance: Balance<IOTA>,
     }
 
-    /// Customer loyalty card to track purchases
-    public struct LoyaltyCard has key, store {
-        id: UID,
-        customer: address,
-        points: u64,
-        total_coffees: u64,
-    }
-
-    /// Event emitted when coffee is purchased
-    public struct CoffeePurchased has copy, drop {
-        customer: address,
-        amount: u64,
-        loyalty_points_earned: u64,
-    }
-
-    /// Initialize the module and create the coffee token
-    /// This function is called once when the module is published
-    fun init(witness: COFFEE, ctx: &mut TxContext) {
-        // Create the COFFEE token with metadata
-        let (treasury_cap, metadata) = coin::create_currency(
-            witness,
-            6, // 6 decimals
-            b"COFFEE", // Symbol
-            b"Coffee Token", // Name
-            b"Token for purchasing coffee at our shop", // Description
-            option::some(url::new_unsafe_from_bytes(
-                b"https://example.com/coffee-icon.png"
-            )), // Icon URL
+    /// Initialize the coffee shop with token creation
+    fun init(otw: COFFEE, ctx: &mut TxContext) {
+        // Create COFFEE point token
+        let (coffee_points, metadata) = coin::create_currency(
+            otw,
+            0, // 0 decimals for coffee points
+            b"COFFEE",
+            b"Coffee Point",
+            b"Buy 4 coffees and get 1 free",
+            option::none(),
             ctx
         );
 
-        // Create the coffee shop
-        let shop = CoffeeShop {
-            id: object::new(ctx),
-            owner: tx_context::sender(ctx),
-            balance: balance::zero(),
-            price_per_coffee: 1_000_000, // 1 COFFEE token (with 6 decimals)
-            loyalty_per_coffee: 10, // 10 loyalty points per coffee
-            is_open: true,
-        };
-
-        // Freeze the metadata to make it immutable
+        // Freeze the metadata
         transfer::public_freeze_object(metadata);
-        
-        // Transfer treasury cap to the shop owner
-        transfer::public_transfer(treasury_cap, tx_context::sender(ctx));
-        
-        // Share the coffee shop so customers can interact with it
-        transfer::share_object(shop);
-    }
 
-    /// Mint new COFFEE tokens (only treasury cap holder can mint)
-    public entry fun mint_coffee_tokens(
-        treasury_cap: &mut TreasuryCap<COFFEE>,
-        amount: u64,
-        recipient: address,
-        ctx: &mut TxContext
-    ) {
-        let coffee_coin = coin::mint(treasury_cap, amount, ctx);
-        transfer::public_transfer(coffee_coin, recipient);
-    }
-
-    /// Buy coffee from the shop using COFFEE tokens
-    public entry fun buy_coffee(
-        shop: &mut CoffeeShop,
-        payment: Coin<COFFEE>,
-        loyalty_card: &mut LoyaltyCard,
-        ctx: &mut TxContext
-    ) {
-        // Check if shop is open
-        assert!(shop.is_open, EShopClosed);
-        
-        // Check payment amount
-        let payment_value = coin::value(&payment);
-        assert!(payment_value >= shop.price_per_coffee, EInsufficientPayment);
-        
-        // Calculate how many coffees are being purchased
-        let num_coffees = payment_value / shop.price_per_coffee;
-        
-        // Add payment to shop balance
-        let payment_balance = coin::into_balance(payment);
-        balance::join(&mut shop.balance, payment_balance);
-        
-        // Update loyalty card
-        loyalty_card.points = loyalty_card.points + (num_coffees * shop.loyalty_per_coffee);
-        loyalty_card.total_coffees = loyalty_card.total_coffees + num_coffees;
-        
-        // Emit purchase event
-        event::emit(CoffeePurchased {
-            customer: tx_context::sender(ctx),
-            amount: num_coffees,
-            loyalty_points_earned: num_coffees * shop.loyalty_per_coffee,
-        });
-    }
-
-    /// Create a new loyalty card for a customer
-    public entry fun create_loyalty_card(ctx: &mut TxContext) {
-        let card = LoyaltyCard {
+        // Create and share the coffee shop
+        transfer::share_object(CoffeeShop {
             id: object::new(ctx),
-            customer: tx_context::sender(ctx),
-            points: 0,
-            total_coffees: 0,
-        };
-        
-        transfer::public_transfer(card, tx_context::sender(ctx));
-    }
-
-    /// Redeem loyalty points for free coffee
-    /// Every 100 points = 1 free coffee
-    public entry fun redeem_loyalty_points(
-        shop: &mut CoffeeShop,
-        loyalty_card: &mut LoyaltyCard,
-        points_to_redeem: u64,
-        ctx: &mut TxContext
-    ) {
-        // Check if shop is open
-        assert!(shop.is_open, EShopClosed);
-        
-        // Check if customer has enough points (100 points = 1 coffee)
-        assert!(loyalty_card.points >= points_to_redeem, EInvalidLoyaltyPoints);
-        assert!(points_to_redeem % 100 == 0, EInvalidLoyaltyPoints);
-        
-        // Calculate free coffees
-        let free_coffees = points_to_redeem / 100;
-        
-        // Deduct points
-        loyalty_card.points = loyalty_card.points - points_to_redeem;
-        loyalty_card.total_coffees = loyalty_card.total_coffees + free_coffees;
-        
-        // Emit event
-        event::emit(CoffeePurchased {
-            customer: loyalty_card.customer,
-            amount: free_coffees,
-            loyalty_points_earned: 0,
+            coffee_points,
+            balance: balance::zero(),
         });
     }
 
-    /// Shop owner withdraws accumulated COFFEE tokens
-    public entry fun withdraw_earnings(
-        shop: &mut CoffeeShop,
-        amount: u64,
+    /// Buy a coffee with IOTA and receive a coffee point token
+    public fun buy_coffee(
+        app: &mut CoffeeShop,
+        payment: Coin<IOTA>,
         ctx: &mut TxContext
     ) {
-        // Only owner can withdraw
-        assert!(shop.owner == tx_context::sender(ctx), EShopClosed);
-        
-        let withdrawn = coin::take(&mut shop.balance, amount, ctx);
-        transfer::public_transfer(withdrawn, shop.owner);
+        // Check payment amount
+        assert!(coin::value(&payment) >= COFFEE_PRICE, EIncorrectAmount);
+
+        // Mint a coffee point token
+        let coffee_token = token::mint(&mut app.coffee_points, 1, ctx);
+
+        // Transfer the token to the buyer
+        let request = token::transfer(coffee_token, sender(ctx), ctx);
+        token::confirm_with_treasury_cap(&mut app.coffee_points, request, ctx);
+
+        // Add payment to shop balance
+        coin::put(&mut app.balance, payment);
     }
 
-    /// Open or close the shop
-    public entry fun set_shop_status(
-        shop: &mut CoffeeShop,
-        is_open: bool,
+    /// Claim a free coffee by spending 4 coffee points
+    public fun claim_coffee(
+        app: &mut CoffeeShop,
+        points: Token<COFFEE>,
         ctx: &mut TxContext
     ) {
-        // Only owner can change status
-        assert!(shop.owner == tx_context::sender(ctx), EShopClosed);
-        shop.is_open = is_open;
+        // Burn 4 coffee points
+        assert!(token::value(&points) >= 4, ENotEnoughPoints);
+        token::burn(&mut app.coffee_points, points);
+
+        // Mint 1 new coffee point as reward
+        let coffee_token = token::mint(&mut app.coffee_points, 1, ctx);
+        let request = token::transfer(coffee_token, sender(ctx), ctx);
+        token::confirm_with_treasury_cap(&mut app.coffee_points, request, ctx);
     }
 
-    /// Update coffee price
-    public entry fun update_price(
-        shop: &mut CoffeeShop,
-        new_price: u64,
-        ctx: &mut TxContext
-    ) {
-        // Only owner can update price
-        assert!(shop.owner == tx_context::sender(ctx), EShopClosed);
-        shop.price_per_coffee = new_price;
-    }
-
-    /// View functions
-    public fun get_shop_balance(shop: &CoffeeShop): u64 {
-        balance::value(&shop.balance)
-    }
-
-    public fun get_loyalty_points(card: &LoyaltyCard): u64 {
-        card.points
-    }
-
-    public fun get_total_coffees(card: &LoyaltyCard): u64 {
-        card.total_coffees
+    /// Get the shop's IOTA balance
+    public fun get_balance(app: &CoffeeShop): u64 {
+        balance::value(&app.balance)
     }
 }`;
 
@@ -1375,11 +1178,11 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
   {
     id: 'basic-dex',
     name: 'Basic DEX',
-    description: 'Automated market maker for token swaps',
+    description: 'Automated market maker for token swaps (Note: Uses testing functions - for learning purposes only)',
     icon: Zap,
     code: DEX_CODE,
     difficulty: 'advanced',
-    tags: ['defi', 'dex', 'amm', 'swap'],
+    tags: ['defi', 'dex', 'amm', 'swap', 'experimental'],
     category: 'defi',
     linesOfCode: 285,
     estimatedTime: '30 min',

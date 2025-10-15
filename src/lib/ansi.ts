@@ -35,3 +35,59 @@ export function parseAnsiOutput(text: string): { text: string; className: string
 
   return result;
 }
+
+// Categorize output lines by type
+export function categorizeOutputLine(line: string): {
+  type: 'error' | 'warning' | 'success' | 'info' | 'normal';
+  content: string;
+  raw: string;
+} {
+  // Remove ANSI codes for pattern matching
+  const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
+  const lowerLine = cleanLine.toLowerCase();
+
+  // Error patterns
+  if (
+    lowerLine.includes('error:') ||
+    lowerLine.includes('error[') ||
+    lowerLine.includes('failed') ||
+    lowerLine.includes('╰─▶') ||
+    lowerLine.includes('┌─') && lowerLine.includes('error')
+  ) {
+    return { type: 'error', content: line, raw: cleanLine };
+  }
+
+  // Warning patterns
+  if (
+    lowerLine.includes('warning:') ||
+    lowerLine.includes('warn:') ||
+    lowerLine.includes('warning[')
+  ) {
+    return { type: 'warning', content: line, raw: cleanLine };
+  }
+
+  // Success patterns
+  if (
+    lowerLine.includes('success') ||
+    lowerLine.includes('build successful') ||
+    lowerLine.includes('compiled successfully') ||
+    lowerLine.includes('✓') ||
+    lowerLine.includes('✔')
+  ) {
+    return { type: 'success', content: line, raw: cleanLine };
+  }
+
+  // Info patterns
+  if (
+    lowerLine.includes('building') ||
+    lowerLine.includes('compiling') ||
+    lowerLine.includes('including dependency') ||
+    lowerLine.includes('info:') ||
+    lowerLine.startsWith('──')
+  ) {
+    return { type: 'info', content: line, raw: cleanLine };
+  }
+
+  // Default to normal
+  return { type: 'normal', content: line, raw: cleanLine };
+}

@@ -80,6 +80,7 @@ export function PTBExecutionDialog({
   const [isExecuting, setIsExecuting] = useState(false);
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'result'>('preview');
+  const [simulationSuccess, setSimulationSuccess] = useState(false);
   
   const { user } = useAuth();
   const { 
@@ -96,6 +97,7 @@ export function PTBExecutionDialog({
     if (open) {
       setActiveTab('preview');
       setResult(null);
+      setSimulationSuccess(false);
     }
   }, [open, commands]);
 
@@ -455,8 +457,10 @@ export function PTBExecutionDialog({
       });
       console.log('Dry run result:', dryRunResult);
 
+      const isSuccess = dryRunResult.effects?.status?.status === 'success';
+
       setResult({
-        success: dryRunResult.effects?.status?.status === 'success',
+        success: isSuccess,
         gasUsed: dryRunResult.effects?.gasUsed?.computationCost || '0',
         objectChanges: dryRunResult.objectChanges,
         events: dryRunResult.events,
@@ -465,9 +469,12 @@ export function PTBExecutionDialog({
         senderAddress: sender,
       });
 
+      // Set simulation success flag
+      setSimulationSuccess(isSuccess);
+
       toast({
         title: 'Dry Run Complete',
-        description: dryRunResult.effects?.status?.status === 'success'
+        description: isSuccess
           ? 'Transaction simulation successful'
           : 'Transaction simulation failed',
       });
@@ -853,8 +860,8 @@ export function PTBExecutionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh]">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl w-[90vw] max-h-[90vh] flex flex-col overflow-hidden">
+        <DialogHeader className="flex-none pb-4">
           <DialogTitle className="flex items-center gap-2">
             {mode === 'dry-run' ? (
               <>
@@ -871,17 +878,17 @@ export function PTBExecutionDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-          <TabsList className="grid grid-cols-2 w-full">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <TabsList className="flex-none grid grid-cols-2 w-full mb-4">
             <TabsTrigger value="preview">Preview</TabsTrigger>
             <TabsTrigger value="result" disabled={!result}>
               Result
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="preview" className="space-y-4">
-            <ScrollArea className="h-[400px]">
-              <div className="space-y-3 p-4">
+          <TabsContent value="preview" className="flex-1 data-[state=active]:flex data-[state=active]:flex-col min-h-0 mt-0">
+            <ScrollArea className="flex-1 pr-4">
+              <div className="space-y-3">
                 {commands.map((command, index) => (
                   <Card key={index} className="border bg-gradient-to-br from-muted/50 to-background">
                     <CardContent className="p-4">
@@ -896,10 +903,144 @@ export function PTBExecutionDialog({
                           </span>
                         )}
                       </div>
-                      <div className="bg-background/50 rounded-md p-3 border overflow-hidden">
-                        <pre className="text-xs font-mono whitespace-pre-wrap break-all overflow-x-auto max-h-[300px] overflow-y-auto">
-                          {JSON.stringify(command, null, 2)}
-                        </pre>
+                      <div className="bg-muted/30 rounded-md p-4 space-y-3">
+                        {/* Command Type Specific Display */}
+                        {command.type === 'MoveCall' && (
+                          <>
+                            <div className="grid grid-cols-[120px_1fr] gap-2 items-start">
+                              <span className="text-xs font-semibold text-muted-foreground uppercase">Target</span>
+                              <code className="text-xs bg-background px-2 py-1 rounded border font-mono break-all">
+                                {command.target}
+                              </code>
+                            </div>
+                            <div className="grid grid-cols-[120px_1fr] gap-2 items-start">
+                              <span className="text-xs font-semibold text-muted-foreground uppercase">Function</span>
+                              <code className="text-xs bg-background px-2 py-1 rounded border font-mono">
+                                {command.module}::{command.function}
+                              </code>
+                            </div>
+                            {command.arguments && command.arguments.length > 0 && (
+                              <div className="grid grid-cols-[120px_1fr] gap-2 items-start">
+                                <span className="text-xs font-semibold text-muted-foreground uppercase">Arguments ({command.arguments.length})</span>
+                                <div className="space-y-2">
+                                  {command.arguments.map((arg: any, idx: number) => (
+                                    <div key={idx} className="bg-background p-2 rounded border">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <Badge variant="outline" className="text-xs h-5">{idx}</Badge>
+                                        <Badge variant="secondary" className="text-xs h-5">{arg.type}</Badge>
+                                      </div>
+                                      <div className="flex items-start gap-2">
+                                        <span className="text-[10px] text-muted-foreground">Value:</span>
+                                        <code className="text-xs font-mono break-all flex-1">
+                                          {typeof arg.value === 'object' ? JSON.stringify(arg.value) : String(arg.value)}
+                                        </code>
+                                      </div>
+                                      {arg.paramType && (
+                                        <div className="flex items-start gap-2 mt-1">
+                                          <span className="text-[10px] text-muted-foreground">Type:</span>
+                                          <code className="text-xs font-mono text-blue-600 dark:text-blue-400">{arg.paramType}</code>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {command.typeArguments && command.typeArguments.length > 0 && (
+                              <div className="grid grid-cols-[120px_1fr] gap-2 items-start">
+                                <span className="text-xs font-semibold text-muted-foreground uppercase">Type Args</span>
+                                <div className="space-y-1">
+                                  {command.typeArguments.map((typeArg: string, idx: number) => (
+                                    <code key={idx} className="text-xs bg-background px-2 py-1 rounded border font-mono block">
+                                      {typeArg}
+                                    </code>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {command.type === 'TransferObjects' && (
+                          <>
+                            <div className="grid grid-cols-[120px_1fr] gap-2 items-start">
+                              <span className="text-xs font-semibold text-muted-foreground uppercase">Objects ({command.objects?.length || 0})</span>
+                              <div className="space-y-1">
+                                {command.objects?.map((obj: any, idx: number) => (
+                                  <div key={idx} className="bg-background p-2 rounded border">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <Badge variant="outline" className="text-xs h-5">{idx}</Badge>
+                                      <Badge variant="secondary" className="text-xs h-5">{obj.type}</Badge>
+                                    </div>
+                                    <code className="text-xs font-mono break-all block">
+                                      {typeof obj.value === 'object' ? JSON.stringify(obj.value) : String(obj.value)}
+                                    </code>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-[120px_1fr] gap-2 items-start">
+                              <span className="text-xs font-semibold text-muted-foreground uppercase">Recipient</span>
+                              <code className="text-xs bg-background px-2 py-1 rounded border font-mono break-all">
+                                {command.recipient?.value || 'N/A'}
+                              </code>
+                            </div>
+                          </>
+                        )}
+
+                        {command.type === 'SplitCoins' && (
+                          <>
+                            <div className="grid grid-cols-[120px_1fr] gap-2 items-start">
+                              <span className="text-xs font-semibold text-muted-foreground uppercase">Coin</span>
+                              <div className="bg-background p-2 rounded border">
+                                <Badge variant="secondary" className="text-xs h-5 mb-1">{command.coin?.type}</Badge>
+                                <code className="text-xs font-mono break-all block">
+                                  {typeof command.coin?.value === 'object' ? JSON.stringify(command.coin.value) : String(command.coin?.value)}
+                                </code>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-[120px_1fr] gap-2 items-start">
+                              <span className="text-xs font-semibold text-muted-foreground uppercase">Amounts ({command.amounts?.length || 0})</span>
+                              <div className="space-y-1">
+                                {command.amounts?.map((amt: any, idx: number) => (
+                                  <code key={idx} className="text-xs bg-background px-2 py-1 rounded border font-mono block">
+                                    {amt.value} MIST
+                                  </code>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        {command.type === 'MergeCoins' && (
+                          <>
+                            <div className="grid grid-cols-[120px_1fr] gap-2 items-start">
+                              <span className="text-xs font-semibold text-muted-foreground uppercase">Destination</span>
+                              <div className="bg-background p-2 rounded border">
+                                <Badge variant="secondary" className="text-xs h-5 mb-1">{command.destination?.type}</Badge>
+                                <code className="text-xs font-mono break-all block">
+                                  {typeof command.destination?.value === 'object' ? JSON.stringify(command.destination.value) : String(command.destination?.value)}
+                                </code>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-[120px_1fr] gap-2 items-start">
+                              <span className="text-xs font-semibold text-muted-foreground uppercase">Sources ({command.sources?.length || 0})</span>
+                              <div className="space-y-1">
+                                {command.sources?.map((src: any, idx: number) => (
+                                  <div key={idx} className="bg-background p-2 rounded border">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <Badge variant="outline" className="text-xs h-5">{idx}</Badge>
+                                      <Badge variant="secondary" className="text-xs h-5">{src.type}</Badge>
+                                    </div>
+                                    <code className="text-xs font-mono break-all block">
+                                      {typeof src.value === 'object' ? JSON.stringify(src.value) : String(src.value)}
+                                    </code>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -917,9 +1058,10 @@ export function PTBExecutionDialog({
             )}
           </TabsContent>
 
-          <TabsContent value="result" className="space-y-4">
+          <TabsContent value="result" className="flex-1 data-[state=active]:flex data-[state=active]:flex-col min-h-0 mt-0">
             {result && (
-              <ScrollArea className="h-[400px] border rounded-md p-4">
+              <ScrollArea className="flex-1 pr-4">
+                <div className="border rounded-md p-4">
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
                     {result.success ? (
@@ -1059,41 +1201,134 @@ export function PTBExecutionDialog({
 
                   {result.objectChanges && result.objectChanges.length > 0 && (
                     <div className="overflow-hidden">
-                      <Label className="text-sm">Object Changes</Label>
-                      <div className="mt-1 bg-muted rounded-md p-2 max-h-[200px] overflow-auto">
-                        <pre className="text-xs font-mono whitespace-pre-wrap break-all">
-                          {JSON.stringify(result.objectChanges, null, 2)}
-                        </pre>
+                      <Label className="text-sm">Object Changes ({result.objectChanges.length})</Label>
+                      <div className="mt-2 space-y-2 max-h-[300px] overflow-auto">
+                        {result.objectChanges.map((change: any, idx: number) => (
+                          <div key={idx} className="bg-muted/30 rounded-md p-3 border">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant="outline" className="text-xs">{idx + 1}</Badge>
+                              <Badge variant={
+                                change.type === 'created' ? 'default' :
+                                change.type === 'mutated' ? 'secondary' :
+                                change.type === 'deleted' ? 'destructive' :
+                                change.type === 'published' ? 'default' : 'outline'
+                              } className="text-xs capitalize">
+                                {change.type}
+                              </Badge>
+                              {change.objectType && (
+                                <span className="text-xs font-mono text-muted-foreground truncate">
+                                  {change.objectType.split('::').slice(-1)[0]}
+                                </span>
+                              )}
+                            </div>
+                            <div className="space-y-1.5">
+                              {change.objectId && (
+                                <div className="flex items-start gap-2">
+                                  <span className="text-[10px] font-semibold text-muted-foreground uppercase min-w-[60px]">Object ID</span>
+                                  <code className="text-xs font-mono bg-background px-1.5 py-0.5 rounded break-all flex-1">
+                                    {change.objectId}
+                                  </code>
+                                </div>
+                              )}
+                              {change.packageId && (
+                                <div className="flex items-start gap-2">
+                                  <span className="text-[10px] font-semibold text-muted-foreground uppercase min-w-[60px]">Package</span>
+                                  <code className="text-xs font-mono bg-background px-1.5 py-0.5 rounded break-all flex-1">
+                                    {change.packageId}
+                                  </code>
+                                </div>
+                              )}
+                              {change.objectType && (
+                                <div className="flex items-start gap-2">
+                                  <span className="text-[10px] font-semibold text-muted-foreground uppercase min-w-[60px]">Type</span>
+                                  <code className="text-xs font-mono bg-background px-1.5 py-0.5 rounded break-all flex-1 text-blue-600 dark:text-blue-400">
+                                    {change.objectType}
+                                  </code>
+                                </div>
+                              )}
+                              {change.sender && (
+                                <div className="flex items-start gap-2">
+                                  <span className="text-[10px] font-semibold text-muted-foreground uppercase min-w-[60px]">Sender</span>
+                                  <code className="text-xs font-mono bg-background px-1.5 py-0.5 rounded break-all flex-1">
+                                    {change.sender}
+                                  </code>
+                                </div>
+                              )}
+                              {change.owner && (
+                                <div className="flex items-start gap-2">
+                                  <span className="text-[10px] font-semibold text-muted-foreground uppercase min-w-[60px]">Owner</span>
+                                  <code className="text-xs font-mono bg-background px-1.5 py-0.5 rounded break-all flex-1">
+                                    {typeof change.owner === 'object' ? JSON.stringify(change.owner) : String(change.owner)}
+                                  </code>
+                                </div>
+                              )}
+                              {change.modules && change.modules.length > 0 && (
+                                <div className="flex items-start gap-2">
+                                  <span className="text-[10px] font-semibold text-muted-foreground uppercase min-w-[60px]">Modules</span>
+                                  <div className="flex-1 space-y-1">
+                                    {change.modules.map((mod: string, i: number) => (
+                                      <code key={i} className="text-xs font-mono bg-background px-1.5 py-0.5 rounded block">
+                                        {mod}
+                                      </code>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
                 </div>
+              </div>
               </ScrollArea>
             )}
           </TabsContent>
         </Tabs>
 
-        <DialogFooter>
+        <DialogFooter className="flex-none">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </Button>
           {mode === 'dry-run' ? (
-            <Button
-              onClick={handleDryRun}
-              disabled={isExecuting || commands.length === 0}
-            >
-              {isExecuting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Simulating...
-                </>
-              ) : (
-                <>
-                  <Eye className="h-4 w-4 mr-2" />
-                  Run Simulation
-                </>
+            <>
+              <Button
+                onClick={handleDryRun}
+                disabled={isExecuting || commands.length === 0}
+              >
+                {isExecuting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Simulating...
+                  </>
+                ) : (
+                  <>
+                    <Eye className="h-4 w-4 mr-2" />
+                    Run Simulation
+                  </>
+                )}
+              </Button>
+              {simulationSuccess && (
+                <Button
+                  onClick={handleExecute}
+                  disabled={isExecuting || !isConnected || commands.length === 0}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {isExecuting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Executing...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 mr-2" />
+                      Execute
+                    </>
+                  )}
+                </Button>
               )}
-            </Button>
+            </>
           ) : (
             <Button
               onClick={handleExecute}

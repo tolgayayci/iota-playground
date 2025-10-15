@@ -2,11 +2,12 @@ import { CompilationResult } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
-import { Terminal, Loader2, Clock, History, Blocks, Copy, CheckCircle } from 'lucide-react';
+import { Terminal, Loader2, Clock, History, Blocks, Copy, CheckCircle, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { parseAnsiOutput } from '@/lib/ansi';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { CompilerOutputDialog } from './CompilerOutputDialog';
 
 interface CompilerViewProps {
   result?: CompilationResult | null;
@@ -16,14 +17,15 @@ interface CompilerViewProps {
   isSharedView?: boolean;
 }
 
-export function CompilerView({ 
-  result, 
-  isCompiling, 
+export function CompilerView({
+  result,
+  isCompiling,
   projectId,
   projectName,
   isSharedView = false,
 }: CompilerViewProps) {
   const [copiedOutput, setCopiedOutput] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const { toast } = useToast();
 
   if (!result && !isCompiling) {
@@ -137,21 +139,32 @@ export function CompilerView({
             <h3 className="text-sm font-medium">Compiler Output</h3>
           </div>
           {displayResult?.stdout && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5"
-              onClick={() => handleCopy(displayResult.stdout)}
-            >
-              {copiedOutput ? (
-                <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-              <span className="text-xs">
-                {copiedOutput ? 'Copied!' : 'Copy'}
-              </span>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5"
+                onClick={() => setDialogOpen(true)}
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+                <span className="text-xs">View Details</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5"
+                onClick={() => handleCopy(displayResult.stdout)}
+              >
+                {copiedOutput ? (
+                  <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+                <span className="text-xs">
+                  {copiedOutput ? 'Copied!' : 'Copy'}
+                </span>
+              </Button>
+            </div>
           )}
         </div>
         <ScrollArea className="flex-1 h-full">
@@ -180,6 +193,13 @@ export function CompilerView({
           </div>
         </ScrollArea>
       </div>
+
+      {/* Detailed Output Dialog */}
+      <CompilerOutputDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        result={displayResult}
+      />
     </div>
   );
 }
