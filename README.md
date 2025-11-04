@@ -8,7 +8,7 @@
   </p>
 
   <p align="center">
-    <a href="https://playground.iota.org">playground.iota.org</a>
+    <a href="https://iotaplay.app">iotaplay.app</a>
     ·
     <a href="https://docs.iota.org">Documentation</a>
   </p>
