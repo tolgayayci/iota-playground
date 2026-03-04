@@ -133,8 +133,6 @@ export function validateMoveToml(content: string): ValidationResult {
       
       if (!config.package.edition) {
         errors.push('[package].edition is required');
-      } else if (!['2024.beta', '2024.alpha', 'legacy'].includes(config.package.edition)) {
-        errors.push('[package].edition must be: 2024.beta, 2024.alpha, or legacy');
       }
     }
     

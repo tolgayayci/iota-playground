@@ -151,7 +151,8 @@ export async function compileMove(
         }
 
         // Fallback: Read the compiled bytecode from build directory
-        const buildPath = path.join(projectPath, 'build', 'user_project');
+        const buildDirName = await findBuildDirectory(projectPath);
+        const buildPath = path.join(projectPath, 'build', buildDirName);
         const { stdout: bytecodeOutput } = await execAsync(`find ${buildPath} -name "*.mv" -type f 2>/dev/null || true`);
         
         if (bytecodeOutput.trim()) {
@@ -367,10 +368,28 @@ function parseABIFromMoveCode(code: string): any {
   return abi;
 }
 
+// Detect the build directory name from Move.toml package name or by scanning build/
+async function findBuildDirectory(projectPath: string): Promise<string> {
+  const moveTomlPath = path.join(projectPath, 'Move.toml');
+  if (fs.existsSync(moveTomlPath)) {
+    const content = await fs.promises.readFile(moveTomlPath, 'utf-8');
+    const match = content.match(/^\s*name\s*=\s*"([^"]+)"/m);
+    if (match) return match[1];
+  }
+  const buildRoot = path.join(projectPath, 'build');
+  if (fs.existsSync(buildRoot)) {
+    const entries = await readdir(buildRoot, { withFileTypes: true });
+    const dir = entries.find(e => e.isDirectory());
+    if (dir) return dir.name;
+  }
+  return 'user_project';
+}
+
 // Get bytecode for deployment
 export async function getBytecodeForDeployment(userId: string, projectId: string) {
   const projectPath = path.join(__dirname, '..', '..', 'projects', userId, projectId);
-  const buildPath = path.join(projectPath, 'build', 'user_project');
+  const buildDir = await findBuildDirectory(projectPath);
+  const buildPath = path.join(projectPath, 'build', buildDir);
   const metadataPath = path.join(projectPath, 'last_compilation.json');
   
   try {
